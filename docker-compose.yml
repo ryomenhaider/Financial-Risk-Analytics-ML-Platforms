@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+
+  postgres:
+    image: postgres:15
+    container_name: fip_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    container_name: fip_redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  airflow:
+    image: apache/airflow:2.9.1-python3.10
+    container_name: fip_airflow
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+    ports:
+      - "8080:8080"
+    command: webserver
+
+  api:
+    build: .
+    container_name: fip_api
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+
+  dashboard:
+    build: .
+    container_name: fip_dashboard
+    depends_on:
+      - api
+    env_file:
+      - .env
+    ports:
+      - "8050:8050"
+    command: python src/dashboard/app.py
+
+volumes:
+  postgres_data:
