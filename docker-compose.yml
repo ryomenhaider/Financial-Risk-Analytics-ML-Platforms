@@ -1,66 +1,70 @@
-version: "3.9"
+version: '3,9'
 
 services:
 
-  postgres:
-    image: postgres:15
-    container_name: fip_postgres
-    restart: always
+  db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: timescaledb
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: postgree
+      POSTGRES_PASSWORD: 2007
+      POSTFRES_DB: finDB
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - db_data: var/lib/postgresql/data
     ports:
       - "5432:5432"
-
-  redis:
-    image: redis:7
-    container_name: fip_redis
-    restart: always
-    ports:
-      - "6379:6379"
-
-  airflow:
-    image: apache/airflow:2.9.1-python3.10
-    container_name: fip_airflow
+  
+  fastapi:
+    build: .
+    container_name: fastapi
+    env_file:
+      - .env
     depends_on:
       - postgres
-      - redis
+    expose:
+      - "8000"
+
+  dash:
+  build: .
+  container_name: dash
+  command: python src/dashboard/app.py
+  env_file:
+   -  .env
+  depends_on:
+    - fastapi
+  expose:
+   - '8050'
+  
+  airflow:
+    image: apache/airflow:2.8.1
+    container_name: airflow
     environment:
-      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/plugins:/opt/airflow/plugins
+    depends_on:
+      - db
     ports:
       - "8080:8080"
-    command: webserver
 
-  api:
-    build: .
-    container_name: fip_api
-    depends_on:
-      - postgres
-    env_file:
-      - .env
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.9.2
+    container_name: mlflow
     ports:
-      - "8000:8000"
-    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+      - "5000:5000"
+    command: mlflow server --host 0.0.0.0
+  
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    ports:
+      - '8080'
+    depends_on:
+      - fastapi
+      - dash
 
-  dashboard:
-    build: .
-    container_name: fip_dashboard
-    depends_on:
-      - api
-    env_file:
-      - .env
-    ports:
-      - "8050:8050"
-    command: python src/dashboard/app.py
 
 volumes:
-  postgres_data:
+  db_data:
