@@ -13,15 +13,12 @@ PERIOD = "1y"
 INTERVAL = "1d"
 
 def fetch_ticker(symbol: str) -> pd.DataFrame:
-    import requests
-    session = requests.Session()
-    session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    })
-
-    return yf.Ticker(symbol, session=session).history(period=PERIOD, interval=INTERVAL)
+    return yf.Ticker(symbol).history(period=PERIOD, interval=INTERVAL)
 
 def transform(df: pd.DataFrame, symbol: str) -> list[dict]:
+    
+    df = df.reset_index()
+
     df = df.rename(columns={
         "Date":   "date",
         "Open":   "open",
@@ -36,8 +33,7 @@ def transform(df: pd.DataFrame, symbol: str) -> list[dict]:
 
     df["ticker"] = symbol
 
-
-    if pd.api.types.is_datetime64tz_dtype(df["date"]):
+    if isinstance(df["date"].dtype, pd.DatetimeTZDtype):
         df["date"] = df["date"].dt.tz_convert(None)
     df["date"] = pd.to_datetime(df["date"]).dt.date
 

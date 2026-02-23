@@ -41,4 +41,6 @@ API_KEYS: Dict[str, str] = _parse_api_key(
     os.getenv("API_KEYS", "")
 )
 DATA_DIR: Path = Path(os.getenv("DATA_DIR", "./data")).resolve()
-DATA_DIR.mkdir(parents=True, exist_ok=True)  # create if doesn't exist
+DATA_DIR.mkdir(parents=True, exist_ok=True)  
+FRED_API_KEY: str = _get_req_env("FRED_API_KEY")
+NEWS_API_KEY: str = _get_req_env('NEWS_API_KEY')
