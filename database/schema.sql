@@ -92,6 +92,30 @@ CREATE TABLE IF NOT EXISTS model_runs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS features(
+    ticker TEXT NOT NULL,
+    date DATE NOT NULL,
+    log_return NUMERIC,
+    lag_1d NUMERIC,
+    lag_5d NUMERIC,
+    lag_21d NUMERIC,
+    lag_63d NUMERIC,
+    rolling_mean_5 NUMERIC,
+    rolling_std_5 NUMERIC,
+    rolling_skew_5 NUMERIC,
+    rolling_mean_21 NUMERIC,
+    rolling_std_21 NUMERIC,
+    rolling_skew_21 NUMERIC,
+    rolling_mean_63 NUMERIC,
+    rolling_std_63 NUMERIC,
+    rolling_skew_63 NUMERIC,
+    rsi_14 NUMERIC,
+    bb_pct_b NUMERIC,
+    volume_ratio NUMERIC,
+
+    PRIMARY KEY (ticker, date)
+
+);
 
 -- Hypertables for time-series performance
 SELECT create_hypertable('market_data', 'date', if_not_exists => TRUE);
@@ -99,3 +123,4 @@ SELECT create_hypertable('crypto_prices', 'date', if_not_exists => TRUE);
 SELECT create_hypertable('news_sentiment', 'published_at', if_not_exists => TRUE);
 SELECT create_hypertable('anomalies', 'created_at', if_not_exists => TRUE);
 SELECT create_hypertable('forecasts', 'forecast_date', if_not_exists => TRUE);
+SELECT create_hypertable('features', 'date', if_not_exists => TRUE);

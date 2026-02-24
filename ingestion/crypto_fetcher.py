@@ -1,4 +1,3 @@
-# ingestion/crypto_fetcher.py
 
 import sys
 from pathlib import Path

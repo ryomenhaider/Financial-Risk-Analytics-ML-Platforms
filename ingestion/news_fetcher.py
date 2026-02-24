@@ -1,4 +1,3 @@
-# ingestion/news_fetcher.py
 
 import sys
 from pathlib import Path

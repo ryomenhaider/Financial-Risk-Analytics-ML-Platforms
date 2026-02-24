@@ -1,4 +1,3 @@
-# database/models.py
 
 from sqlalchemy import Column, Date, Text, Numeric, BigInteger, Integer, text
 from sqlalchemy.orm import DeclarativeBase
@@ -106,3 +105,21 @@ class ModelRun(Base):
     parameters = Column(JSONB)
     trained_at = Column(TIMESTAMP(timezone=True), server_default=text('NOW()'))
     created_at = Column(TIMESTAMP(timezone=True), server_default=text('NOW()'))
+
+
+class Features(Base):
+    __tablename__ = "features"
+
+    ticker = Column(Text, primary_key=True, nullable=False)
+    date = Column(Date, primary_key=True, nullable=False)
+    log_return = Column(Numeric)
+    lag_1d = Column(Numeric)
+    lag_5d = Column(Numeric)
+    lag_21d = Column(Numeric)
+    lag_63d = Column(Numeric)
+    rolling_mean_21 = Column(Numeric)
+    rolling_std_21 = Column(Numeric)
+    rolling_skew_21 = Column(Numeric)
+    rsi_14 = Column(Numeric)
+    bb_pct_b = Column(Numeric)
+    volume_ratio = Column(Numeric)

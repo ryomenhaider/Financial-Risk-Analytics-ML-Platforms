@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from database.models import (
     MarketData, CryptoPrice, EconomicIndicator,
-    NewsSentiment, Anomaly, Forecast, PortfolioWeight, ModelRun
+    NewsSentiment, Anomaly, Forecast, PortfolioWeight, ModelRun, Features
 )
 
 
@@ -141,6 +141,21 @@ def get_model_runs(session: Session, model_name: str) -> list[ModelRun]:
         .all()
     )
 
+def insert_features(session: Session, rows: list[dict]) -> None:
+    stmt = insert(Features).values(rows)
+    stmt = stmt.on_conflict_do_nothing(index_elements=["ticker", "date"])
+    session.execute(stmt)
+    session.commit()
+
+
+def get_features(session: Session, ticker: str, limit: int = 100) -> list[Features]:
+    return (
+        session.query(Features)
+        .filter(Features.ticker == ticker)
+        .order_by(Features.date.desc())
+        .limit(limit)
+        .all()
+    )
 
 if __name__ == "__main__":
     from database.connection import get_session
