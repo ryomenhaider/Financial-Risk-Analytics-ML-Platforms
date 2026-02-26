@@ -11,6 +11,7 @@ dependencies = [
     "graphviz>=0.21",
     "pandas>=3.0.1",
     "psycopg2-binary==2.9.9",
+    "pyod>=2.0.6",
     "pypi>=2.1",
     "requests-ratelimiter>=0.9.1",
     "scikit-learn>=1.8.0",
