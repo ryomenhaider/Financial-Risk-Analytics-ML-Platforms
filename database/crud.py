@@ -29,6 +29,9 @@ def get_latest_prices(session: Session, ticker: str, limit: int = 100) -> list[M
         .all()
     )
 
+def get_all_tickers(session: Session) -> list[str]:
+    rows = session.query(MarketData.ticker).distinct().all()
+    return [row[0] for row in rows]
 
 def insert_crypto_prices(session: Session, rows: list[dict]) -> None:
     stmt = insert(CryptoPrice).values(rows)

@@ -3,10 +3,18 @@ name = "financial-intelligence-platform"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.11.*"
 dependencies = [
+    "ccxt>=4.5.40",
+    "dotenv>=0.9.9",
+    "pandas>=3.0.1",
+    "psycopg2-binary==2.9.9",
+    "pypi>=2.1",
     "requests-ratelimiter>=0.9.1",
-    "sqlalchemy>=2.0.46",
+    "scikit-learn>=1.8.0",
+    "sqlalchemy>=2.0.47",
     "torch>=2.10.0",
     "transformers>=5.2.0",
+    "xgboost>=3.2.0",
+    "yfinance>=1.2.0",
 ]
