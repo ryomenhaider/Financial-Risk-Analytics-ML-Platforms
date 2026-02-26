@@ -5,8 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = "==3.11.*"
 dependencies = [
+    "apache-airflow>=2.10.5",
     "ccxt>=4.5.40",
     "dotenv>=0.9.9",
+    "graphviz>=0.21",
     "pandas>=3.0.1",
     "psycopg2-binary==2.9.9",
     "pypi>=2.1",
@@ -18,3 +20,5 @@ dependencies = [
     "xgboost>=3.2.0",
     "yfinance>=1.2.0",
 ]
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
