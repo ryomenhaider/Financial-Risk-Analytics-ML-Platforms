@@ -81,7 +81,6 @@ def get_sentiment(session: Session, ticker: str, limit: int = 50) -> list[NewsSe
         .all()
     )
 
-
 def insert_anomaly(session: Session, rows: list[dict]) -> None:
     session.bulk_insert_mappings(Anomaly, rows)
     session.commit()
