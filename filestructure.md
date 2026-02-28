@@ -23,25 +23,25 @@ financial-intelligence-platform/
 │           └── 001_initial.py    ✅ done
 │
 ├── ingestion/
-│   ├── price_fetcher.py          ⬅️ you are here
-│   ├── macro_fetcher.py          ⏳ next
-│   ├── crypto_fetcher.py         ⏳ next
-│   ├── news_fetcher.py           ⏳ next
-│   └── feature_engineer.py       ⏳ next
+│   ├── price_fetcher.py          ✅ done
+│   ├── macro_fetcher.py          ✅ done
+│   ├── crypto_fetcher.py         ✅ done
+│   ├── news_fetcher.py           ✅ done
+│   └── feature_engineer.py       ✅ done
 │
 ├── dags/
-│   ├── dag_prices.py             ⏳ later
-│   ├── dag_macro.py              ⏳ later
-│   ├── dag_news.py               ⏳ later
+│   ├── dag_prices.py             ✅ done
+│   ├── dag_macro.py              ✅ done
+│   ├── dag_news.py               ✅ done
 │   └── dag_retrain.py            ⏳ later
 │
 ├── ml/
-│   ├── anomaly_detector.py       ⏳ later
-│   ├── forecaster.py             ⏳ later
-│   ├── portfolio_optimizer.py    ⏳ later
-│   ├── sentiment_engine.py       ⏳ later
-│   ├── feature_store.py          ⏳ later
-│   ├── model_registry.py         ⏳ later
+│   ├── anomaly_detector.py       ✅ done
+│   ├── forecaster.py             ✅ done
+│   ├── portfolio_optimizer.py    ✅ done
+│   ├── sentiment_engine.py       ✅ done
+│   ├── feature_store.py          ✅ done
+│   ├── model_registry.py         ⬅️ I are here
 │   └── train_pipeline.py         ⏳ later
 │
 ├── api/
