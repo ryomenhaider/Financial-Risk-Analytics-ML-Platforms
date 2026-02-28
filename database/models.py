@@ -45,7 +45,7 @@ class EconomicIndicator(Base):
 
 class NewsSentiment(Base):
     __tablename__ = "news_sentiment"
-
+    
     id = Column(Integer, primary_key=True)
     ticker = Column(Text)
     headline = Column(Text)

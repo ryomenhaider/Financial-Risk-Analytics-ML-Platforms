@@ -149,6 +149,7 @@ def save_forecasts(forecast_df: pd.DataFrame,
     with get_session() as session:
         try:
             insert_forecasts(session, rows)
+            session.commit()
             print(f"[{ticker}] Saved forecasts to DB")
         except Exception as e:
             print(f"[{ticker}] Error saving forecasts: {e}")

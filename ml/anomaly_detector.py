@@ -117,6 +117,7 @@ def save_anomalies(df: pd.DataFrame, ticker: str) -> None:
     try:
         insert_anomaly(session, rows)  
         logger.info(f"[{ticker}] Saved {len(rows)} anomalies to DB")
+        session.commit()
         print(f"[{ticker}] Saved {len(rows)} anomalies to DB")
     except Exception as e:
         session.rollback()
