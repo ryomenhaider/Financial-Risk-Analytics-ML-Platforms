@@ -85,12 +85,19 @@ def insert_anomaly(session: Session, rows: list[dict]) -> None:
     session.bulk_insert_mappings(Anomaly, rows)
     session.commit()
 
+def get_latest_anomaly(session: Session) -> Anomaly:
+    return (
+        session.query(Anomaly)
+        .order_by(Anomaly.created_at.desc())
+        .first()
+    )
 
-def get_anomalies(session: Session, ticker: str) -> list[Anomaly]:
+def get_anomalies(session: Session, ticker: str, limit: int = 30) -> list[Anomaly]:
     return (
         session.query(Anomaly)
         .filter(Anomaly.ticker == ticker)
         .order_by(Anomaly.date.desc())
+        .limit(limit)
         .all()
     )
 
