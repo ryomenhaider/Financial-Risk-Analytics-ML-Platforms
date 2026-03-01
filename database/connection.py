@@ -35,9 +35,12 @@ def test_connection() -> None:
             value = result.scalar()
             print(f'query result: {value}')
             logger.info('The DB has connected')
+            return True
         except Exception as e:
             logger.error(f"DB Connection failed: {e}")
+            return False
             raise
+            
         finally:
              session.close()
 
