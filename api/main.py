@@ -7,6 +7,11 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from config.logging_config import get_logger
+from api.routers.prices import router as prices_router
+from api.routers.anomalies import router as anomalies_router
+from api.routers.forecasts import router as forecasts_router
+from api.routers.portfolio import router as portfolio_router
+from api.routers.sentiment import router as sentiment_router
 
 logger = get_logger(__name__)
 
@@ -56,12 +61,11 @@ async def health():
         "version": app.version
     }
 
-# Routers underConstruction (lol) 
-# # app.include_router(market_router, prefix="/market", tags=["Market"])
-# app.include_router(forecast_router, prefix="/forecast", tags=["Forecast"])
-# app.include_router(portfolio_router, prefix="/portfolio", tags=["Portfolio"])
-# app.include_router(sentiment_router, prefix="/sentiment", tags=["Sentiment"])
-# app.include_router(anomaly_router, prefix="/anomaly", tags=["Anomaly"])
+app.include_router(prices_router, prefix="/prices", tags=["Prices"])
+app.include_router(anomalies_router, prefix="/anomalies", tags=["Anomalies"])
+app.include_router(forecasts_router, prefix="/forecasts", tags=["Forecasts"])
+app.include_router(portfolio_router, prefix="/portfolio", tags=["Portfolio"])
+app.include_router(sentiment_router, prefix="/sentiment", tags=["Sentiment"])
 
 if __name__ == "__main__":
     uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
