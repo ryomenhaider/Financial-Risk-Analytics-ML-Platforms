@@ -15,6 +15,7 @@ logger = get_logger(__name__)
 TICKERS = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL']
 RISK_FREE_RATE = 0.05   # 5% annual
 TRADING_DAYS = 252       # days in a trading year
+
 def neg_sharpe(weights, mean_returns, cov_matrix):
     port_returns = np.sum(mean_returns * weights ) * TRADING_DAYS
     port_volatility = np.sqrt(weights @ cov_matrix @ weights) * np.sqrt(TRADING_DAYS)
@@ -93,7 +94,6 @@ def black_litterman(returns_df: pd.DataFrame,
     )
     return result.x
 
-    
 
 
 def kelly_criterion(returns_df: pd.DataFrame) -> np.ndarray:
