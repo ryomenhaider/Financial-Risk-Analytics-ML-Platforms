@@ -1,201 +1,333 @@
 """
 Page 5 — Sentiment Analysis
-News feed with FinBERT score badges, 30-day sentiment timeline,
-correlation between sentiment and next-day returns.
+FinBERT scores over time, news feed with badges, correlation heatmap.
 """
-
-import dash
-from dash import html, dcc, Input, Output, callback
+import dash, requests
+from dash import dcc, html, Input, Output, callback
 import plotly.graph_objects as go
 import pandas as pd
-import numpy as np
-import datetime, random
+from dashboard.theme import COLORS, PLOT_BASE, API_BASE, HEADERS
 
-dash.register_page(__name__, path="/sentiment", name="Sentiment Analysis")
+dash.register_page(__name__, path="/sentiment", name="Sentiment Analysis", order=4)
 
-TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
-COLORS  = dict(accent="#00e5ff", green="#00c98d", red="#ff4d6d", orange="#ff8c42",
-               surface="#0d1117", surface2="#161b27", border="#1e2738", muted="#64748b", text="#e2e8f0")
+TICKERS = ["AAPL","MSFT","GOOGL","TSLA","NVDA","AMZN","META","BTC-USD","ETH-USD","SPY"]
 
-HEADLINES = [
-    "{t} beats earnings estimates by 8% as cloud revenue surges",
-    "Analysts upgrade {t} to Strong Buy ahead of product launch",
-    "{t} faces regulatory scrutiny over data privacy practices",
-    "{t} announces $10B share buyback programme",
-    "Supply chain disruption hits {t} quarterly guidance",
-    "{t} expands AI integration across flagship product line",
-    "Activist investor takes stake in {t}, pushes for restructuring",
-    "{t} CEO signals optimism for second-half recovery",
-    "{t} misses revenue target; stock falls in after-hours trading",
-    "{t} secures major government contract worth $2.4B",
-    "Labour concerns at {t} facilities spark union talks",
-    "{t} launches next-gen chip platform outperforming rivals",
-]
-SOURCES = ["Reuters", "Bloomberg", "CNBC", "WSJ", "FT", "MarketWatch", "The Verge", "Barron's"]
 
-def gen_news(ticker, n=8):
-    items = []
-    base_dt = datetime.datetime.utcnow()
-    for i in range(n):
-        score = round(np.random.uniform(-1, 1), 3)
-        dt    = base_dt - datetime.timedelta(hours=random.randint(1, 48))
-        items.append(dict(
-            headline=random.choice(HEADLINES).replace("{t}", ticker),
-            source=random.choice(SOURCES),
-            score=score,
-            label="Positive" if score > 0.15 else ("Negative" if score < -0.15 else "Neutral"),
-            ts=dt.strftime("%b %d · %H:%M"),
-        ))
-    return sorted(items, key=lambda x: x["ts"], reverse=True)
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _score_color(score):
+    if score >= 0.2:  return COLORS["green"]
+    if score <= -0.2: return COLORS["red"]
+    return COLORS["amber"]
 
-def gen_sentiment_ts(ticker, n=30):
-    np.random.seed(hash(ticker) % 2**31)
-    dates  = pd.bdate_range(end=datetime.date.today(), periods=n)
-    scores = np.random.uniform(-0.6, 0.8, n)
-    # smooth
-    scores = pd.Series(scores).ewm(span=5).mean().values
-    returns = scores * np.random.uniform(0.3, 0.7, n) + np.random.normal(0, 0.008, n)
-    return dates, scores, returns
+def _score_label(score):
+    if score >= 0.2:  return "POSITIVE"
+    if score <= -0.2: return "NEGATIVE"
+    return "NEUTRAL"
 
-def make_sentiment_timeline(ticker):
-    dates, scores, _ = gen_sentiment_ts(ticker)
+def _badge(text, color):
+    return html.Span(text, style={
+        "background": color + "22", "color": color,
+        "border": f"1px solid {color}44", "borderRadius": "3px",
+        "padding": "1px 7px", "fontFamily": "'IBM Plex Mono',monospace",
+        "fontSize": "9px", "letterSpacing": "1px", "fontWeight": "600",
+    })
+
+def _empty_fig(msg="No data available"):
     fig = go.Figure()
-    colors = [COLORS["green"] if s > 0.1 else (COLORS["red"] if s < -0.1 else COLORS["muted"]) for s in scores]
-    fig.add_trace(go.Bar(
-        x=dates, y=scores, marker_color=colors, name="Daily Sentiment",
-        hovertemplate="%{x|%b %d}<br>Score: %{y:.3f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=dates, y=pd.Series(scores).rolling(5).mean(),
-        mode="lines", line=dict(color=COLORS["accent"], width=2),
-        name="5-day MA",
-    ))
-    fig.add_hline(y=0, line=dict(color=COLORS["border"], width=1))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=COLORS["text"]), height=240,
-        xaxis=dict(showgrid=False, color=COLORS["muted"]),
-        yaxis=dict(showgrid=True, gridcolor=COLORS["border"], color=COLORS["muted"], range=[-1, 1]),
-        legend=dict(bgcolor="rgba(0,0,0,0)"),
-        margin=dict(l=10, r=10, t=10, b=10),
-        barmode="overlay",
-    )
+    fig.add_annotation(text=msg, x=0.5, y=0.5, xref="paper", yref="paper",
+                       showarrow=False, font=dict(color=COLORS["muted"], size=12))
+    fig.update_layout(**PLOT_BASE, height=240)
     return fig
 
-def make_correlation_scatter(ticker):
-    dates, scores, returns = gen_sentiment_ts(ticker, n=60)
-    corr = np.corrcoef(scores, returns)[0, 1]
-    fig = go.Figure(go.Scatter(
-        x=scores, y=returns,
-        mode="markers",
-        marker=dict(
-            color=scores, colorscale=[[0,"#ff4d6d"],[0.5,"#64748b"],[1,"#00c98d"]],
-            size=7, opacity=0.75, cmid=0,
-        ),
-        hovertemplate="Sentiment: %{x:.3f}<br>Next-day return: %{y:.2%}<extra></extra>",
-    ))
-    # Trend line
-    m, b = np.polyfit(scores, returns, 1)
-    xs   = np.linspace(min(scores), max(scores), 50)
-    fig.add_trace(go.Scatter(
-        x=xs, y=m*xs+b, mode="lines",
-        line=dict(color=COLORS["accent"], width=2, dash="dot"),
-        name=f"Trend (r={corr:.2f})",
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=COLORS["text"]), height=240,
-        xaxis=dict(title="Sentiment Score", showgrid=True, gridcolor=COLORS["border"], color=COLORS["muted"]),
-        yaxis=dict(title="Next-day Return", showgrid=True, gridcolor=COLORS["border"], color=COLORS["muted"], tickformat=".1%"),
-        legend=dict(bgcolor="rgba(0,0,0,0)"),
-        margin=dict(l=10, r=10, t=10, b=10),
-    )
-    return fig, corr
+def _safe_fetch(url, params=None):
+    """Returns parsed JSON or None on any error."""
+    try:
+        r = requests.get(url, params=params, headers=HEADERS, timeout=6)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return None
 
-def make_news_feed(news):
-    items = []
-    for n in news:
-        badge_cls = "badge-pos" if n["label"] == "Positive" else ("badge-neg" if n["label"] == "Negative" else "badge-neu")
-        items.append(html.Div([
-            html.Div([
-                html.Span(f"{n['score']:+.3f}", className=badge_cls),
-            ], style={"flexShrink": "0", "paddingTop": "2px"}),
-            html.Div([
-                html.P(n["headline"], className="news-headline"),
-                html.P(f"{n['source']} · {n['ts']}", className="news-meta"),
-            ]),
-        ], className="news-item"))
-    return html.Div(items)
+def _find_col(df, candidates):
+    """Return the first matching column name from candidates list."""
+    for c in candidates:
+        if c in df.columns:
+            return c
+    return None
 
-def agg_metrics(ticker):
-    _, scores, returns = gen_sentiment_ts(ticker, 30)
-    avg = np.mean(scores)
-    pct_pos = np.mean(scores > 0.1) * 100
-    corr    = np.corrcoef(scores, returns)[0, 1]
-    tiles = [
-        ("Avg Sentiment",  f"{avg:+.3f}",    "30-day mean",     "pos" if avg > 0 else "neg"),
-        ("% Positive",     f"{pct_pos:.0f}%","Days bullish",    "pos" if pct_pos > 50 else "neg"),
-        ("Sentiment–Ret Corr", f"{corr:.3f}", "Predictive power","pos" if corr > 0.1 else ("neg" if corr < -0.1 else "neu")),
-    ]
-    return [
-        html.Div([
-            html.Div(label, className="metric-tile-label"),
-            html.Div(val,   className="metric-tile-value"),
-            html.Div(desc,  className=f"metric-tile-delta {cls}"),
-        ], className="metric-tile")
-        for label, val, desc, cls in tiles
-    ]
+
+# ── Helper card ───────────────────────────────────────────────────────────────
+def _kpi_chip(ticker, score):
+    col = _score_color(score)
+    return html.Div([
+        html.Div(ticker, style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"9px",
+                                 "color":COLORS["dim"],"letterSpacing":"1px","marginBottom":"2px"}),
+        html.Div(f"{score:+.2f}", style={"fontFamily":"'IBM Plex Mono',monospace",
+                                          "fontWeight":"600","fontSize":"14px","color":col}),
+    ], style={"background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+               "borderBottom":f"2px solid {col}","borderRadius":"4px",
+               "padding":"8px 14px","textAlign":"center"})
+
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 layout = html.Div([
     html.Div([
-        html.Span("Ticker:", className="filter-label"),
-        dcc.Dropdown(
-            id="sn-ticker", options=[{"label": t, "value": t} for t in TICKERS],
-            value="NVDA", clearable=False, style={"width": "130px"},
-        ),
-    ], className="filter-bar"),
+        html.Div([
+            html.Span("SENTIMENT ANALYSIS", style={
+                "fontFamily":"'IBM Plex Mono',monospace","fontWeight":"600",
+                "fontSize":"13px","color":COLORS["text"],"letterSpacing":"3px"}),
+            html.Div("FinBERT  ·  Financial NLP  ·  NewsAPI Headlines", style={
+                "fontFamily":"'IBM Plex Mono',monospace","fontSize":"9px",
+                "color":COLORS["dim"],"marginTop":"3px"}),
+        ]),
+        html.Div([
+            dcc.Dropdown(id="sent-ticker",
+                         options=[{"label":t,"value":t} for t in TICKERS],
+                         value="AAPL", clearable=False,
+                         style={"width":"150px","fontFamily":"'IBM Plex Mono',monospace",
+                                "fontSize":"12px","background":COLORS["elevated"],
+                                "border":f"1px solid {COLORS['border']}"}),
+            dcc.Dropdown(id="sent-days",
+                         options=[{"label":"7D","value":7},{"label":"30D","value":30},
+                                  {"label":"90D","value":90}],
+                         value=30, clearable=False,
+                         style={"width":"90px","fontFamily":"'IBM Plex Mono',monospace",
+                                "fontSize":"12px","background":COLORS["elevated"],
+                                "border":f"1px solid {COLORS['border']}","marginLeft":"8px"}),
+        ], style={"display":"flex","alignItems":"center"}),
+    ], style={"display":"flex","justifyContent":"space-between",
+              "alignItems":"flex-start","marginBottom":"24px"}),
 
-    html.Div(id="sn-metrics", className="metric-grid", style={"marginBottom": "20px"}),
+    # KPI bar
+    html.Div(id="sent-kpi-bar", style={"marginBottom":"20px"}),
 
+    # Timeline + gauge
     html.Div([
         html.Div([
-            html.Div("FinBERT News Feed", className="dash-card-title"),
-            html.Div(id="sn-feed"),
-        ], className="dash-card"),
+            html.Div("SENTIMENT TIMELINE", style={
+                "fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="circle", color=COLORS["purple"], children=[
+                dcc.Graph(id="sent-timeline", config={"displayModeBar":False},
+                          style={"height":"280px"}),
+            ]),
+        ], style={"flex":"2","background":COLORS["card"],
+                   "border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+
         html.Div([
-            html.Div([
-                html.Div("30-Day Sentiment Timeline", className="dash-card-title"),
-                dcc.Graph(id="sn-timeline", config=dict(displayModeBar=False)),
-            ], className="dash-card"),
-            html.Div([
-                html.Div("Sentiment vs Next-Day Return", className="dash-card-title"),
-                dcc.Graph(id="sn-corr", config=dict(displayModeBar=False)),
-                html.Div(id="sn-corr-label", style={"marginTop": "8px", "fontSize": "12px", "color": "#64748b", "fontFamily": "JetBrains Mono"}),
-            ], className="dash-card"),
-        ]),
-    ], className="two-col"),
+            html.Div("CURRENT SCORE", style={
+                "fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="dot", color=COLORS["purple"], children=[
+                dcc.Graph(id="sent-gauge", config={"displayModeBar":False},
+                          style={"height":"250px"}),
+            ]),
+        ], style={"flex":"1","background":COLORS["card"],
+                   "border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+    ], style={"display":"flex","gap":"16px","marginBottom":"16px"}),
+
+    # Heatmap + news feed
+    html.Div([
+        html.Div([
+            html.Div("CROSS-ASSET SENTIMENT HEATMAP", style={
+                "fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="dot", color=COLORS["purple"], children=[
+                dcc.Graph(id="sent-heatmap", config={"displayModeBar":False},
+                          style={"height":"300px"}),
+            ]),
+        ], style={"flex":"1","background":COLORS["card"],
+                   "border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+
+        html.Div([
+            html.Div("LATEST HEADLINES", style={
+                "fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="dot", color=COLORS["purple"], children=[
+                html.Div(id="sent-news-feed",
+                         style={"maxHeight":"300px","overflowY":"auto"}),
+            ]),
+        ], style={"width":"420px","background":COLORS["card"],
+                   "border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+    ], style={"display":"flex","gap":"16px"}),
 ])
 
+
+# ── Callback ──────────────────────────────────────────────────────────────────
 @callback(
-    Output("sn-metrics",    "children"),
-    Output("sn-feed",       "children"),
-    Output("sn-timeline",   "figure"),
-    Output("sn-corr",       "figure"),
-    Output("sn-corr-label", "children"),
-    Input("sn-ticker",      "value"),
+    [Output("sent-timeline", "figure"),
+     Output("sent-gauge",    "figure"),
+     Output("sent-heatmap",  "figure"),
+     Output("sent-news-feed","children"),
+     Output("sent-kpi-bar",  "children")],
+    [Input("sent-ticker","value"),
+     Input("sent-days",  "value")],
 )
-def refresh(ticker):
-    random.seed(hash(ticker))
-    np.random.seed(hash(ticker) % 2**31)
-    news          = gen_news(ticker)
-    timeline_fig  = make_sentiment_timeline(ticker)
-    corr_fig, corr = make_correlation_scatter(ticker)
-    corr_label    = f"Pearson r = {corr:.3f}  ({'positive' if corr > 0 else 'negative'} correlation)"
-    return (
-        agg_metrics(ticker),
-        make_news_feed(news),
-        timeline_fig,
-        corr_fig,
-        corr_label,
+def update_sentiment(ticker, days):
+    # ── 1. Timeline data ──────────────────────────────────────────────────────
+    timeline_data = _safe_fetch(f"{API_BASE}/sentiment/{ticker}/timeline",
+                                params={"days": days})
+    timeline = pd.DataFrame(timeline_data) if timeline_data else pd.DataFrame()
+
+    ts_col    = _find_col(timeline, ["published_at","date","timestamp"]) if not timeline.empty else None
+    score_col = _find_col(timeline, ["sentiment_score","score"]) if not timeline.empty else None
+
+    if ts_col and not timeline.empty:
+        timeline[ts_col] = pd.to_datetime(timeline[ts_col], errors="coerce")
+        timeline = timeline.dropna(subset=[ts_col]).sort_values(ts_col)
+
+    # ── 2. Timeline figure ────────────────────────────────────────────────────
+    if timeline.empty or not score_col:
+        fig_timeline = _empty_fig("No sentiment timeline data")
+    else:
+        sc   = timeline[score_col]
+        cols = [COLORS["green"] if v >= 0 else COLORS["red"] for v in sc]
+
+        fig_timeline = go.Figure()
+        fig_timeline.add_trace(go.Bar(
+            x=timeline[ts_col], y=sc,
+            marker_color=cols, opacity=0.75, name="Sentiment",
+        ))
+        if len(sc) >= 7:
+            fig_timeline.add_trace(go.Scatter(
+                x=timeline[ts_col], y=sc.rolling(7).mean(),
+                line=dict(color=COLORS["blue"], width=2, dash="dash"),
+                name="7D Avg", mode="lines",
+            ))
+        fig_timeline.update_layout(
+            **PLOT_BASE, height=240,
+            yaxis_range=[-1, 1],
+            shapes=[dict(type="line", x0=0, x1=1, xref="paper", y0=0, y1=0,
+                         line=dict(color=COLORS["border"], width=1))],
+            title=dict(text=f"{ticker}  SENTIMENT  (-1 to +1)",
+                       font=dict(size=11, color=COLORS["muted"])),
+        )
+
+    # ── 3. Current score ──────────────────────────────────────────────────────
+    current_score = 0.0
+    # Try dedicated endpoint first
+    spot = _safe_fetch(f"{API_BASE}/sentiment/{ticker}")
+    if spot and isinstance(spot, dict):
+        current_score = float(spot.get("score", spot.get("sentiment_score", 0)) or 0)
+    elif not timeline.empty and score_col:
+        current_score = float(timeline[score_col].iloc[-1])
+
+    # ── 4. Gauge figure ───────────────────────────────────────────────────────
+    gauge_color = _score_color(current_score)
+    fig_gauge = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=round(current_score, 3),
+        gauge=dict(
+            axis=dict(range=[-1, 1], tickcolor=COLORS["muted"],
+                      tickfont=dict(color=COLORS["muted"], size=9)),
+            bar=dict(color=gauge_color, thickness=0.25),
+            bgcolor=COLORS["elevated"],
+            borderwidth=1, bordercolor=COLORS["border"],
+            steps=[
+                dict(range=[-1,  -0.2], color=COLORS["red"]   + "22"),
+                dict(range=[-0.2, 0.2], color=COLORS["amber"] + "22"),
+                dict(range=[ 0.2,   1], color=COLORS["green"] + "22"),
+            ],
+        ),
+        number=dict(font=dict(family="'IBM Plex Mono',monospace",
+                               size=32, color=gauge_color)),
+        title=dict(text=ticker,
+                   font=dict(family="'IBM Plex Mono',monospace",
+                              size=11, color=COLORS["muted"])),
+    ))
+    fig_gauge.update_layout(
+        paper_bgcolor=COLORS["card"], font_color=COLORS["text"],
+        height=220, margin=dict(l=20, r=20, t=30, b=10),
     )
+
+    # ── 5. Heatmap — fetch all tickers ────────────────────────────────────────
+    heatmap_scores = {}
+    for t in TICKERS[:8]:
+        data = _safe_fetch(f"{API_BASE}/sentiment/{t}")
+        if data and isinstance(data, dict):
+            v = data.get("score", data.get("sentiment_score", None))
+            if v is not None:
+                try:
+                    heatmap_scores[t] = float(v)
+                except (TypeError, ValueError):
+                    pass
+
+    if heatmap_scores:
+        tks  = list(heatmap_scores.keys())
+        vals = [heatmap_scores[t] for t in tks]
+        fig_heat = go.Figure(go.Heatmap(
+            z=[vals], x=tks, y=["SCORE"],
+            colorscale=[[0, COLORS["red"]], [0.5, COLORS["amber"]], [1, COLORS["green"]]],
+            zmin=-1, zmax=1, showscale=True,
+            colorbar=dict(tickfont=dict(color=COLORS["muted"], size=9),
+                          len=0.8, thickness=12,
+                          title=dict(text="Score",
+                                     font=dict(color=COLORS["muted"]))),
+            text=[[f"{v:.2f}" for v in vals]],
+            texttemplate="%{text}",
+            textfont=dict(family="'IBM Plex Mono',monospace",
+                          size=11, color=COLORS["text"]),
+        ))
+        fig_heat.update_layout(
+            **PLOT_BASE, height=260,
+            title=dict(text="REAL-TIME SENTIMENT SCORES",
+                       font=dict(size=11, color=COLORS["muted"])),
+        )
+    else:
+        fig_heat = _empty_fig("Sentiment scores unavailable")
+
+    # ── 6. News feed ──────────────────────────────────────────────────────────
+    news_data = _safe_fetch(f"{API_BASE}/sentiment/{ticker}/news",
+                            params={"days": min(days, 7)})
+    news = news_data if isinstance(news_data, list) else []
+
+    if not news:
+        news_div = html.Div(
+            "No recent headlines",
+            style={"color":COLORS["dim"],"fontFamily":"'IBM Plex Mono',monospace",
+                   "fontSize":"11px","padding":"12px"},
+        )
+    else:
+        cards = []
+        for item in news[:15]:
+            if not isinstance(item, dict):
+                continue
+            sc    = float(item.get("sentiment_score", item.get("score", 0)) or 0)
+            col   = _score_color(sc)
+            label = _score_label(sc)
+            title = item.get("headline", item.get("title", "—"))
+            src   = item.get("source", "—")
+            date  = str(item.get("published_at", item.get("date", "")))[:10]
+
+            cards.append(html.Div([
+                html.Div([
+                    _badge(label, col),
+                    html.Span(f" {sc:+.3f}", style={
+                        "fontFamily":"'IBM Plex Mono',monospace",
+                        "fontSize":"10px","color":col,"marginLeft":"6px"}),
+                ], style={"marginBottom":"4px"}),
+                html.Div(title, style={"fontSize":"11px","color":COLORS["text"],
+                                        "lineHeight":"1.5","marginBottom":"4px"}),
+                html.Div(f"{src}  ·  {date}", style={
+                    "fontFamily":"'IBM Plex Mono',monospace","fontSize":"9px",
+                    "color":COLORS["dim"]}),
+            ], style={"padding":"10px 0",
+                       "borderBottom":f"1px solid {COLORS['border']}22"}))
+
+        news_div = html.Div(cards)
+
+    # ── 7. KPI bar ────────────────────────────────────────────────────────────
+    kpi_bar = html.Div(
+        [_kpi_chip(t, s) for t, s in heatmap_scores.items()] or
+        [html.Div("No scores available",
+                  style={"color":COLORS["dim"],"fontFamily":"'IBM Plex Mono',monospace",
+                          "fontSize":"11px"})],
+        style={"display":"flex","gap":"8px","flexWrap":"wrap"},
+    )
+
+    return fig_timeline, fig_gauge, fig_heat, news_div, kpi_bar

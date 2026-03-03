@@ -1,0 +1,65 @@
+/* FIP Financial Intelligence Platform — Custom Styles */
+
+/* Global resets */
+body {
+  background-color: #0A0E17 !important;
+  color: #E8EDF5 !important;
+  font-family: 'IBM Plex Sans', sans-serif !important;
+}
+
+/* Nav link hover state */
+.fip-nav-link .nav-link-inner {
+  transition: background 0.15s, color 0.15s;
+}
+.fip-nav-link:hover .nav-link-inner {
+  background: rgba(0, 212, 255, 0.08) !important;
+  color: #00D4FF !important;
+}
+
+/* Dropdown dark overrides */
+.Select-control,
+.Select-menu-outer,
+.VirtualizedSelectFocusedOption,
+.VirtualizedSelectOption {
+  background-color: #1C2333 !important;
+  color: #E8EDF5 !important;
+  border-color: #1F2D45 !important;
+}
+.Select-value-label { color: #E8EDF5 !important; }
+
+/* Dash table */
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner th,
+.dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td {
+  background-color: #111827 !important;
+  color: #E8EDF5 !important;
+  border-color: #1F2D45 !important;
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: 11px !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0A0E17; }
+::-webkit-scrollbar-thumb { background: #1F2D45; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2A3F5F; }
+
+/* Loading spinner tint */
+._dash-loading-callback {
+  background-color: rgba(10, 14, 23, 0.65) !important;
+}
+
+/* Modebar (Plotly toolbar) */
+.modebar {
+  background: rgba(17, 24, 39, 0.9) !important;
+}
+.modebar-btn path { fill: #4A5568 !important; }
+.modebar-btn:hover path { fill: #00D4FF !important; }
+
+/* Animated entry for page content */
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+._dash-undo-redo, .dash-graph, .dash-table-container {
+  animation: fadeSlide 0.25s ease-out;
+}

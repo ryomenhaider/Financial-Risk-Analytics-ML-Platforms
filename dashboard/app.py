@@ -1,81 +1,106 @@
-"""
-Phase 6 Dashboard — app.py
-Entry point. Creates Dash app, dark theme, registers pages, configures routing.
-Run: python dashboard/app.py  →  http://localhost:8050
-"""
 
-import dash
-from dash import Dash, html, dcc, Input, Output, callback
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import dash_bootstrap_components as dbc
-import datetime
+from dash import dcc, html, Input, Output
+import os, requests, dash
+from dashboard.theme import COLORS, API_BASE, API_KEY, HEADERS  # ← from theme
 
-app = Dash(
-    __name__,
-    use_pages=True,
+API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
+API_KEY  = os.getenv("DASHBOARD_API_KEY", "changeme")
+HEADERS  = {"X-API-Key": API_KEY}
+
+# ── Shared design tokens (all pages import from here) ─────────────────────
+COLORS = {
+    "bg":       "#0A0E17", "card":    "#111827", "elevated": "#1C2333",
+    "border":   "#1F2D45", "blue":    "#00D4FF", "green":    "#00FF94",
+    "red":      "#FF4D6D", "amber":   "#FFB800", "purple":   "#A855F7",
+    "text":     "#E8EDF5", "muted":   "#8B9AB3", "dim":      "#4A5568",
+}
+
+PLOT_BASE = dict(
+    paper_bgcolor=COLORS["card"], plot_bgcolor=COLORS["bg"],
+    font=dict(color=COLORS["text"], family="'IBM Plex Mono',monospace", size=11),
+    xaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
+               tickfont=dict(color=COLORS["muted"], size=10), zerolinecolor=COLORS["border"]),
+    yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
+               tickfont=dict(color=COLORS["muted"], size=10), zerolinecolor=COLORS["border"]),
+    margin=dict(l=55, r=20, t=40, b=45),
+    legend=dict(bgcolor=COLORS["elevated"], bordercolor=COLORS["border"],
+                font=dict(color=COLORS["muted"])),
+    hoverlabel=dict(bgcolor=COLORS["elevated"], bordercolor=COLORS["blue"],
+                    font=dict(color=COLORS["text"], family="'IBM Plex Mono',monospace")),
+)
+
+app = dash.Dash(
+    __name__, use_pages=True,
     external_stylesheets=[
-        dbc.themes.CYBORG,
-        dbc.icons.BOOTSTRAP,
-        "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700;800&display=swap",
+        dbc.themes.DARKLY,
+        "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600"
+        "&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap",
     ],
     suppress_callback_exceptions=True,
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
 )
-app.title = "FinDash · Phase 6"
-server = app.server  # expose for gunicorn
+app.title = "FIP — Financial Intelligence Platform"
+server = app.server
 
-# ── Navigation items ──────────────────────────────────────────────────────────
-NAV_ITEMS = [
-    {"label": "Market Overview",     "href": "/overview",  "icon": "bi-grid-3x3-gap-fill"},
-    {"label": "Anomaly Detector",    "href": "/anomalies", "icon": "bi-exclamation-triangle-fill"},
-    {"label": "Price Forecasts",     "href": "/forecasts", "icon": "bi-graph-up-arrow"},
-    {"label": "Portfolio Optimiser", "href": "/portfolio", "icon": "bi-pie-chart-fill"},
-    {"label": "Sentiment Analysis",  "href": "/sentiment", "icon": "bi-chat-quote-fill"},
-]
+_NAV = [("📈","MARKET","/"), ("🔍","ANOMALY","/anomalies"),
+        ("🧠","FORECAST","/forecasts"), ("⚖️","PORTFOLIO","/portfolio"),
+        ("💬","SENTIMENT","/sentiment")]
 
-sidebar = html.Aside([
-    html.Div([html.Span("FIN", className="logo-accent"), html.Span("DASH")], className="sidebar-logo"),
-    html.P("Phase 6 · Analytics", className="sidebar-subtitle"),
-    html.Hr(className="sidebar-divider"),
-    html.Nav([
-        dcc.Link(
-            html.Div([html.I(className=f"{i['icon']} me-2"), i["label"]], className="sidebar-link"),
-            href=i["href"], className="nav-item-link",
-        )
-        for i in NAV_ITEMS
-    ], className="sidebar-nav"),
-    html.Div(className="sidebar-spacer"),
+def _nl(icon, label, href):
+    return dcc.Link(
+        html.Div([
+            html.Span(icon, style={"marginRight":"6px","fontSize":"13px"}),
+            html.Span(label, style={"fontFamily":"'IBM Plex Mono',monospace",
+                                    "fontWeight":"500","fontSize":"10px","letterSpacing":"2px"}),
+        ], style={"display":"flex","alignItems":"center","padding":"6px 14px",
+                  "borderRadius":"4px","color":COLORS["muted"]}),
+        href=href, style={"textDecoration":"none"},
+    )
+
+navbar = html.Div([
     html.Div([
-        html.Div("● LIVE", className="live-badge"),
-        html.P("API endpoints active", className="sidebar-footer-text"),
-    ], className="sidebar-footer"),
-], className="sidebar")
-
-topbar = html.Header([
-    html.Div(id="page-title", className="topbar-title"),
+        html.Span("FIP", style={"fontFamily":"'IBM Plex Mono',monospace","fontWeight":"600",
+                                 "fontSize":"17px","color":COLORS["blue"],"letterSpacing":"5px"}),
+        html.Div("FINANCIAL INTELLIGENCE PLATFORM",
+                 style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"8px",
+                        "color":COLORS["dim"],"letterSpacing":"2.5px","marginTop":"2px"}),
+    ], style={"padding":"0 28px"}),
+    html.Div([_nl(i,l,h) for i,l,h in _NAV],
+             style={"display":"flex","gap":"2px","alignItems":"center"}),
     html.Div([
-        dcc.Interval(id="clock-interval", interval=1000, n_intervals=0),
-        html.Span(id="live-clock", className="topbar-clock"),
-        html.Span(" UTC", className="topbar-tz"),
-    ], className="topbar-right"),
-], className="topbar")
+        html.Div(id="nav-status"),
+        dcc.Interval(id="status-tick", interval=30_000, n_intervals=0),
+    ], style={"padding":"0 28px","display":"flex","alignItems":"center"}),
+], style={"display":"flex","justifyContent":"space-between","alignItems":"center",
+          "height":"58px","background":COLORS["card"],
+          "borderBottom":f"1px solid {COLORS['border']}",
+          "position":"sticky","top":"0","zIndex":"1000"})
 
 app.layout = html.Div([
-    dcc.Location(id="url", refresh=False),
-    sidebar,
-    html.Div([topbar, html.Main(dash.page_container, className="page-content")], className="main-wrapper"),
-], className="app-shell")
+    navbar,
+    html.Div(dash.page_container,
+             style={"minHeight":"calc(100vh - 58px)","background":COLORS["bg"],"padding":"28px"}),
+], style={"background":COLORS["bg"],"minHeight":"100vh","fontFamily":"'IBM Plex Sans',sans-serif"})
 
-@callback(Output("live-clock", "children"), Input("clock-interval", "n_intervals"))
-def update_clock(_):
-    return datetime.datetime.utcnow().strftime("%H:%M:%S")
-
-@callback(Output("page-title", "children"), Input("url", "pathname"))
-def update_title(path):
-    return {
-        "/overview": "Market Overview", "/anomalies": "Anomaly Detector",
-        "/forecasts": "Price Forecasts", "/portfolio": "Portfolio Optimiser",
-        "/sentiment": "Sentiment Analysis",
-    }.get(path, "Dashboard")
+@app.callback(Output("nav-status","children"), Input("status-tick","n_intervals"))
+def _ping(_):
+    dot, label, color = "●", "LIVE", COLORS["green"]
+    try:
+        r = requests.get(f"{API_BASE}/health", timeout=2, headers=HEADERS)
+        if r.status_code != 200:
+            dot, label, color = "●", "DEGRADED", COLORS["amber"]
+    except Exception:
+        dot, label, color = "●", "OFFLINE", COLORS["red"]
+    return html.Span([
+        html.Span(dot, style={"color":color,"marginRight":"6px","fontSize":"9px"}),
+        html.Span(label, style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                                 "color":color,"letterSpacing":"2px"}),
+    ], style={"display":"flex","alignItems":"center"})
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8050)

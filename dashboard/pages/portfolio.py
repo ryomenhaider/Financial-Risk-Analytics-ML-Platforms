@@ -1,192 +1,267 @@
-"""
-Page 4 — Portfolio Optimiser
-Pie chart of optimal weights, efficient frontier scatter,
-Sharpe/Sortino metrics, rebalancing suggestions.
-"""
 
-import dash
-from dash import html, dcc, Input, Output, callback
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import dash, requests
+from dash import dcc, html, Input, Output, callback
 import plotly.graph_objects as go
-import numpy as np
+import pandas as pd
+from dashboard.theme import COLORS, PLOT_BASE, API_BASE, HEADERS  # ✅ safe
+dash.register_page(__name__, path="/portfolio", name="Capital Allocation", order=3)
 
-dash.register_page(__name__, path="/portfolio", name="Portfolio Optimiser")
+METHOD_OPTIONS = [
+    {"label":"Blended (40/40/20)","value":"blended"},
+    {"label":"MPT (Max Sharpe)",  "value":"mpt"},
+    {"label":"Black-Litterman",   "value":"bl"},
+    {"label":"Kelly Criterion",   "value":"kelly"},
+]
 
-TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM", "GS"]
-COLORS  = dict(accent="#00e5ff", green="#00c98d", red="#ff4d6d", orange="#ff8c42",
-               surface="#0d1117", surface2="#161b27", border="#1e2738", muted="#64748b", text="#e2e8f0")
-PALETTE = ["#00e5ff","#7c3aed","#00c98d","#ff8c42","#ff4d6d","#38bdf8","#a78bfa","#34d399","#fbbf24"]
 
-def simulate_frontier(n_portfolios=600, n_assets=9, seed=42):
-    np.random.seed(seed)
-    mu    = np.random.uniform(0.06, 0.22, n_assets)
-    sigma = np.random.uniform(0.12, 0.35, n_assets)
-    corr  = np.eye(n_assets)
-    for i in range(n_assets):
-        for j in range(i+1, n_assets):
-            r = np.random.uniform(0.1, 0.7)
-            corr[i,j] = corr[j,i] = r
-    cov = np.outer(sigma, sigma) * corr
 
-    vols, rets, sharpes, weights = [], [], [], []
-    for _ in range(n_portfolios):
-        w = np.random.dirichlet(np.ones(n_assets))
-        r = w @ mu
-        v = np.sqrt(w @ cov @ w)
-        s = r / v
-        vols.append(v); rets.append(r); sharpes.append(s); weights.append(w)
+def _rcard(label, val_id, accent):
+    return html.Div([
+        html.Div(label, style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"9px",
+                                "letterSpacing":"2px","color":COLORS["dim"],"marginBottom":"4px"}),
+        html.Div(id=val_id, children="—",
+                 style={"fontFamily":"'IBM Plex Mono',monospace","fontWeight":"600",
+                        "fontSize":"22px","color":accent}),
+    ], style={"background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+               "borderTop":f"2px solid {accent}","borderRadius":"6px",
+               "padding":"14px 20px","flex":"1","minWidth":"120px"})
 
-    best_idx = int(np.argmax(sharpes))
-    return dict(
-        vols=vols, rets=rets, sharpes=sharpes,
-        opt_vol=vols[best_idx], opt_ret=rets[best_idx], opt_sharpe=sharpes[best_idx],
-        opt_weights=weights[best_idx],
-        mu=mu, sigma=sigma,
-    )
 
-def make_frontier(data):
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=data["vols"], y=data["rets"],
-        mode="markers",
-        marker=dict(
-            color=data["sharpes"], colorscale="Turbo",
-            size=5, opacity=0.6,
-            colorbar=dict(title="Sharpe", tickfont=dict(color=COLORS["muted"]), titlefont=dict(color=COLORS["muted"])),
-        ),
-        name="Portfolios",
-        hovertemplate="Vol: %{x:.1%}<br>Ret: %{y:.1%}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=[data["opt_vol"]], y=[data["opt_ret"]],
-        mode="markers",
-        marker=dict(symbol="star", color=COLORS["accent"], size=16, line=dict(color="white", width=1)),
-        name=f"Optimal (Sharpe={data['opt_sharpe']:.2f})",
-        hovertemplate=f"Optimal Portfolio<br>Vol: {data['opt_vol']:.1%}<br>Ret: {data['opt_ret']:.1%}<br>Sharpe: {data['opt_sharpe']:.2f}<extra></extra>",
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=COLORS["text"]), height=360,
-        xaxis=dict(title="Volatility (Ann.)", showgrid=True, gridcolor=COLORS["border"], color=COLORS["muted"], tickformat=".0%"),
-        yaxis=dict(title="Return (Ann.)",    showgrid=True, gridcolor=COLORS["border"], color=COLORS["muted"], tickformat=".0%"),
-        legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor=COLORS["border"]),
-        margin=dict(l=10, r=10, t=20, b=10),
-    )
-    return fig
-
-def make_pie(weights):
-    fig = go.Figure(go.Pie(
-        labels=TICKERS,
-        values=[round(w, 4) for w in weights],
-        hole=0.45,
-        marker=dict(colors=PALETTE, line=dict(color="#050810", width=2)),
-        textinfo="label+percent",
-        textfont=dict(size=12, color="white"),
-        hovertemplate="<b>%{label}</b><br>Weight: %{value:.1%}<extra></extra>",
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=COLORS["text"]), height=300,
-        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=11)),
-        margin=dict(l=0, r=0, t=0, b=0),
-        annotations=[dict(text="Optimal", x=0.5, y=0.5, font_size=14, showarrow=False, font_color=COLORS["muted"])],
-    )
-    return fig
-
-def metrics_tiles(data, current_weights):
-    rf = 0.052
-    ann_ret   = data["opt_ret"]
-    ann_vol   = data["opt_vol"]
-    sharpe    = (ann_ret - rf) / ann_vol
-    sortino_v = ann_vol * 0.7
-    sortino   = (ann_ret - rf) / sortino_v
-    max_dd    = np.random.uniform(-0.18, -0.08)
-    tiles = [
-        ("Sharpe Ratio",  f"{sharpe:.3f}",  "> 1.0 target",    "pos" if sharpe > 1 else "neg"),
-        ("Sortino Ratio", f"{sortino:.3f}", "> 1.5 target",    "pos" if sortino > 1.5 else "neg"),
-        ("Ann. Return",   f"{ann_ret:.1%}", "Expected",        "pos"),
-        ("Ann. Volatility",f"{ann_vol:.1%}","Portfolio risk",  "neu"),
-        ("Max Drawdown",  f"{max_dd:.1%}",  "Historical",      "neg"),
-    ]
-    return [
-        html.Div([
-            html.Div(label, className="metric-tile-label"),
-            html.Div(val,   className="metric-tile-value"),
-            html.Div(desc,  className=f"metric-tile-delta {cls}"),
-        ], className="metric-tile")
-        for label, val, desc, cls in tiles
-    ]
-
-def rebalance_table(opt_weights, current_weights):
-    rows = []
-    for t, opt, cur in zip(TICKERS, opt_weights, current_weights):
-        diff  = opt - cur
-        cls   = "badge-pos" if diff > 0.005 else ("badge-neg" if diff < -0.005 else "badge-neu")
-        label = "BUY" if diff > 0.005 else ("SELL" if diff < -0.005 else "HOLD")
-        rows.append(html.Tr([
-            html.Td(t), html.Td(f"{cur:.1%}"), html.Td(f"{opt:.1%}"),
-            html.Td(f"{diff:+.1%}", className="pos" if diff > 0 else "neg"),
-            html.Td(html.Span(label, className=cls)),
-        ]))
-    return html.Table([
-        html.Thead(html.Tr([html.Th(h) for h in ["Ticker","Current","Optimal","Δ Weight","Action"]])),
-        html.Tbody(rows),
-    ], className="dash-table")
-
-# ── Layout ────────────────────────────────────────────────────────────────────
 layout = html.Div([
-    html.Div([
-        html.Span("Objective:", className="filter-label"),
-        dcc.RadioItems(
-            id="po-objective",
-            options=[{"label": l, "value": v} for l, v in [("Max Sharpe","sharpe"),("Min Volatility","minvol"),("Max Return","maxret")]],
-            value="sharpe", inline=True,
-            labelStyle={"marginRight": "14px", "color": "#64748b", "fontSize": "13px"},
-        ),
-        html.Span("Risk-free rate:", className="filter-label"),
-        dcc.Input(id="po-rf", type="number", value=5.2, min=0, max=15, step=0.1,
-                  style={"width": "80px", "background": "#161b27", "border": "1px solid #1e2738",
-                         "color": "#e2e8f0", "borderRadius": "4px", "padding": "4px 8px"}),
-        html.Span("%", style={"color": "#64748b"}),
-    ], className="filter-bar"),
-
+    # Header
     html.Div([
         html.Div([
-            html.Div("Optimal Portfolio Weights", className="dash-card-title"),
-            dcc.Graph(id="po-pie", config=dict(displayModeBar=False)),
-        ], className="dash-card"),
+            html.Span("CAPITAL ALLOCATION ENGINE",
+                      style={"fontFamily":"'IBM Plex Mono',monospace","fontWeight":"600",
+                              "fontSize":"13px","color":COLORS["text"],"letterSpacing":"3px"}),
+            html.Div("MPT  ·  Black-Litterman  ·  Kelly Criterion  ·  40 / 40 / 20 Blend",
+                     style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"9px",
+                             "color":COLORS["dim"],"marginTop":"3px"}),
+        ]),
+        dcc.Dropdown(id="pa-method", options=METHOD_OPTIONS, value="blended",
+                     clearable=False,
+                     style={"width":"220px","fontFamily":"'IBM Plex Mono',monospace",
+                            "fontSize":"12px","background":COLORS["elevated"],
+                            "border":f"1px solid {COLORS['border']}"}),
+    ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
+              "marginBottom":"24px"}),
+
+    # Risk metric cards
+    html.Div([
+        _rcard("SHARPE RATIO",   "pa-sharpe",  COLORS["green"]),
+        _rcard("VAR (95%)",      "pa-var",     COLORS["red"]),
+        _rcard("MAX DRAWDOWN",   "pa-mdd",     COLORS["amber"]),
+        _rcard("PORTFOLIO BETA", "pa-beta",    COLORS["blue"]),
+        _rcard("SORTINO",        "pa-sortino", COLORS["purple"]),
+    ], style={"display":"flex","gap":"12px","marginBottom":"20px","flexWrap":"wrap"}),
+
+    # Weights chart + treemap
+    html.Div([
         html.Div([
-            html.Div("Efficient Frontier", className="dash-card-title"),
-            dcc.Graph(id="po-frontier", config=dict(displayModeBar=True)),
-        ], className="dash-card"),
-    ], className="two-col"),
+            html.Div("WEIGHT COMPARISON  — MPT  ·  BL  ·  KELLY",
+                     style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                             "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="circle", color=COLORS["blue"], children=[
+                dcc.Graph(id="pa-bar-chart", config={"displayModeBar":False},
+                          style={"height":"340px"}),
+            ]),
+        ], style={"flex":"2","background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
 
-    html.Div([
-        html.Div("Risk / Return Metrics", className="dash-card-title"),
-        html.Div(id="po-metrics", className="metric-grid"),
-    ], className="dash-card"),
+        html.Div([
+            html.Div("ALLOCATION TREEMAP",
+                     style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                             "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="dot", color=COLORS["blue"], children=[
+                dcc.Graph(id="pa-treemap", config={"displayModeBar":False},
+                          style={"height":"310px"}),
+            ]),
+        ], style={"flex":"1","background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+    ], style={"display":"flex","gap":"16px","marginBottom":"16px"}),
 
+    # Efficient frontier + rebalancing table
     html.Div([
-        html.Div("Rebalancing Suggestions vs Current Allocation", className="dash-card-title"),
-        html.Div(id="po-rebalance"),
-    ], className="dash-card"),
+        html.Div([
+            html.Div("EFFICIENT FRONTIER",
+                     style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                             "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="dot", color=COLORS["blue"], children=[
+                dcc.Graph(id="pa-frontier", config={"displayModeBar":False},
+                          style={"height":"280px"}),
+            ]),
+        ], style={"flex":"1","background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+
+        html.Div([
+            html.Div("REBALANCING SIGNALS",
+                     style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                             "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="dot", color=COLORS["blue"], children=[
+                html.Div(id="pa-rebalance-table",
+                         style={"maxHeight":"280px","overflowY":"auto"}),
+            ]),
+        ], style={"width":"380px","background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+    ], style={"display":"flex","gap":"16px"}),
 ])
 
+
 @callback(
-    Output("po-pie",       "figure"),
-    Output("po-frontier",  "figure"),
-    Output("po-metrics",   "children"),
-    Output("po-rebalance", "children"),
-    Input("po-objective",  "value"),
-    Input("po-rf",         "value"),
+    [Output("pa-bar-chart","figure"), Output("pa-treemap","figure"),
+     Output("pa-frontier","figure"),  Output("pa-rebalance-table","children"),
+     Output("pa-sharpe","children"),  Output("pa-var","children"),
+     Output("pa-mdd","children"),     Output("pa-beta","children"),
+     Output("pa-sortino","children")],
+    [Input("pa-method","value")],
 )
-def refresh(objective, rf):
-    data = simulate_frontier()
-    # Simulate current (sub-optimal) allocation
-    np.random.seed(99)
-    current = np.random.dirichlet(np.ones(len(TICKERS)))
-    return (
-        make_pie(data["opt_weights"]),
-        make_frontier(data),
-        metrics_tiles(data, current),
-        rebalance_table(data["opt_weights"], current),
-    )
+def update_portfolio(method):
+    empty = go.Figure()
+    empty.update_layout(**PLOT_BASE)
+    defaults = (empty,)*3 + (html.Div("No data"),) + ("—",)*5
+
+    # Weights
+    try:
+        rw = requests.get(f"{API_BASE}/allocation/weights",
+                          params={"method": method}, headers=HEADERS, timeout=6)
+        weights = rw.json() if rw.status_code == 200 else {}
+    except Exception:
+        weights = {}
+
+    # Risk metrics
+    try:
+        rr = requests.get(f"{API_BASE}/risk/portfolio", headers=HEADERS, timeout=6)
+        risk = rr.json() if rr.status_code == 200 else {}
+    except Exception:
+        risk = {}
+
+    # Rebalancing
+    try:
+        rb = requests.get(f"{API_BASE}/allocation/rebalance", headers=HEADERS, timeout=6)
+        rebal = rb.json() if rb.status_code == 200 else []
+    except Exception:
+        rebal = []
+
+    # Bar chart — all 3 methods side-by-side
+    methods_data = {}
+    for m in ["mpt","bl","kelly","blended"]:
+        try:
+            r = requests.get(f"{API_BASE}/allocation/weights",
+                             params={"method":m}, headers=HEADERS, timeout=4)
+            if r.status_code == 200:
+                methods_data[m] = r.json()
+        except Exception:
+            pass
+
+    fig_bar = go.Figure()
+    palette = {"mpt":COLORS["blue"],"bl":COLORS["green"],"kelly":COLORS["amber"],
+               "blended":COLORS["purple"]}
+    tickers_all = sorted(set(k for d in methods_data.values()
+                             for k in (d.keys() if isinstance(d,dict) else [])))
+    for m, d in methods_data.items():
+        if not isinstance(d, dict):
+            continue
+        fig_bar.add_trace(go.Bar(
+            name=m.upper(), x=tickers_all,
+            y=[d.get(t, 0)*100 for t in tickers_all],
+            marker_color=palette.get(m, COLORS["blue"]), opacity=0.8,
+        ))
+    fig_bar.update_layout(**PLOT_BASE, barmode="group", height=300,
+                           yaxis_title="Weight (%)",
+                           title=dict(text="ALLOCATION BY METHOD",
+                                      font=dict(size=11, color=COLORS["muted"])))
+
+    # Treemap (blended weights)
+    blend = methods_data.get("blended", weights) if isinstance(methods_data.get("blended", weights), dict) else {}
+    fig_tree = go.Figure()
+    if blend:
+        labels = list(blend.keys())
+        values = [v * 100 for v in blend.values()]
+        fig_tree = go.Figure(go.Treemap(
+            labels=labels, parents=[""]*len(labels), values=values,
+            textinfo="label+percent root",
+            textfont=dict(family="'IBM Plex Mono',monospace", size=12, color=COLORS["text"]),
+            marker=dict(colors=values, colorscale=[[0, COLORS["border"]], [1, COLORS["blue"]]],
+                        line=dict(width=2, color=COLORS["bg"])),
+        ))
+        fig_tree.update_layout(paper_bgcolor=COLORS["card"], margin=dict(l=0,r=0,t=0,b=0),
+                                height=280)
+
+    # Efficient frontier
+    fig_ef = go.Figure()
+    try:
+        ref = requests.get(f"{API_BASE}/allocation/frontier", headers=HEADERS, timeout=5)
+        if ref.status_code == 200:
+            ef_data = ref.json()
+            ef_df = pd.DataFrame(ef_data)
+            fig_ef.add_trace(go.Scatter(
+                x=ef_df["volatility"]*100, y=ef_df["return"]*100,
+                mode="lines+markers", name="Efficient Frontier",
+                line=dict(color=COLORS["blue"], width=2),
+                marker=dict(size=4, color=COLORS["blue"]),
+            ))
+            # Mark current portfolio
+            cr = risk.get("volatility"), risk.get("expected_return")
+            if cr[0] and cr[1]:
+                fig_ef.add_trace(go.Scatter(
+                    x=[cr[0]*100], y=[cr[1]*100], mode="markers", name="Current",
+                    marker=dict(size=12, color=COLORS["amber"], symbol="star"),
+                ))
+    except Exception:
+        fig_ef.add_annotation(text="Frontier data unavailable", x=0.5, y=0.5,
+                               showarrow=False, font=dict(color=COLORS["muted"], size=12))
+    fig_ef.update_layout(**PLOT_BASE, height=240,
+                          xaxis_title="Volatility (%)", yaxis_title="Expected Return (%)",
+                          title=dict(text="EFFICIENT FRONTIER",
+                                     font=dict(size=11, color=COLORS["muted"])))
+
+    # Rebalancing table
+    if not rebal:
+        reb_table = html.Div("No rebalancing needed",
+                             style={"color":COLORS["dim"],"fontFamily":"'IBM Plex Mono',monospace",
+                                    "fontSize":"11px","padding":"12px"})
+    else:
+        sig_color = {"BUY":COLORS["green"],"SELL":COLORS["red"],"HOLD":COLORS["muted"]}
+        reb_rows  = []
+        for item in (rebal if isinstance(rebal, list) else []):
+            sig = str(item.get("signal","HOLD")).upper()
+            reb_rows.append(html.Tr([
+                html.Td(item.get("ticker","—"), style=_td(COLORS["text"])),
+                html.Td(f"{item.get('current_weight',0)*100:.1f}%", style=_td(COLORS["muted"])),
+                html.Td(f"{item.get('target_weight',0)*100:.1f}%",  style=_td(COLORS["blue"])),
+                html.Td(
+                    html.Span(sig, style={"background":sig_color.get(sig,COLORS["muted"])+"22",
+                                          "color":sig_color.get(sig,COLORS["muted"]),
+                                          "border":f"1px solid {sig_color.get(sig,COLORS['muted'])}44",
+                                          "borderRadius":"3px","padding":"1px 6px",
+                                          "fontFamily":"'IBM Plex Mono',monospace",
+                                          "fontSize":"9px","letterSpacing":"1px"}),
+                    style={"padding":"5px 6px","borderBottom":f"1px solid {COLORS['border']}22"}),
+            ]))
+        reb_table = html.Table(
+            [html.Thead(html.Tr([
+                html.Th("TICKER", style=_th()), html.Th("CURRENT", style=_th()),
+                html.Th("TARGET", style=_th()),  html.Th("ACTION", style=_th()),
+            ]))] + [html.Tbody(reb_rows)],
+            style={"width":"100%","borderCollapse":"collapse","fontFamily":"'IBM Plex Mono',monospace"},
+        )
+
+    # Risk KPIs
+    def _fmt(k, prefix="", suffix="", decimals=3):
+        v = risk.get(k)
+        return f"{prefix}{v:.{decimals}f}{suffix}" if isinstance(v,(int,float)) else "—"
+
+    return (fig_bar, fig_tree, fig_ef, reb_table,
+            _fmt("sharpe_ratio"), _fmt("var_95", prefix="-$"),
+            _fmt("max_drawdown", suffix="%", decimals=1),
+            _fmt("beta"), _fmt("sortino_ratio"))
+
+def _th():
+    return {"fontSize":"9px","color":COLORS["dim"],"letterSpacing":"1.5px",
+            "padding":"5px 6px","textAlign":"left","borderBottom":f"1px solid {COLORS['border']}"}
+def _td(color):
+    return {"fontFamily":"'IBM Plex Mono',monospace","fontSize":"11px","color":color,
+            "padding":"6px 6px","borderBottom":f"1px solid {COLORS['border']}22"}

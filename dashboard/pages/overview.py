@@ -1,212 +1,259 @@
-"""
-Page 1 — Market Overview
-Live prices table, 1-day sparklines, market breadth gauge, top movers, sentiment heatmap.
-Refreshes every 60 seconds via dcc.Interval.
-"""
 
-import dash
-from dash import html, dcc, Input, Output, callback
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import dash, requests
+from dash import dcc, html, Input, Output, callback, dash_table
 import plotly.graph_objects as go
-import plotly.express as px
+from plotly.subplots import make_subplots
 import pandas as pd
-import numpy as np
-import datetime, random
+from dashboard.theme import COLORS, PLOT_BASE, API_BASE, HEADERS  # ✅ safe
+dash.register_page(__name__, path="/", name="Market Overview", order=0)
 
-dash.register_page(__name__, path="/overview", name="Market Overview")
+TICKERS = ["AAPL","MSFT","GOOGL","TSLA","NVDA","AMZN","META","BTC-USD","ETH-USD","SPY"]
 
-TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "JPM", "GS", "SPY"]
-COLORS  = dict(accent="#00e5ff", green="#00c98d", red="#ff4d6d", surface="#0d1117", surface2="#161b27", border="#1e2738", muted="#64748b", text="#e2e8f0")
+def _card(label, value_id, delta_id=None, accent=COLORS["blue"]):
+    return html.Div([
+        html.Div(label, style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"9px",
+                                "letterSpacing":"2px","color":COLORS["dim"],"marginBottom":"6px"}),
+        html.Div(id=value_id, children="—",
+                 style={"fontFamily":"'IBM Plex Mono',monospace","fontWeight":"600",
+                        "fontSize":"22px","color":accent}),
+        html.Div(id=delta_id, children="", style={"fontSize":"11px","color":COLORS["muted"],
+                                                    "marginTop":"2px"}) if delta_id else None,
+    ], style={"background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+              "borderTop":f"2px solid {accent}","borderRadius":"6px",
+              "padding":"16px 20px","flex":"1","minWidth":"140px"})
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-def _rng_price(base, n=78):
-    """Simulate n intraday ticks starting from base."""
-    prices = [base]
-    for _ in range(n - 1):
-        prices.append(prices[-1] * (1 + np.random.normal(0, 0.003)))
-    return prices
-
-def generate_market_data():
-    bases = dict(AAPL=182, MSFT=415, GOOGL=175, AMZN=195, NVDA=875, META=520,
-                 TSLA=248, JPM=198, GS=462, SPY=510)
-    rows = []
-    for t in TICKERS:
-        prices = _rng_price(bases[t])
-        chg    = (prices[-1] - prices[0]) / prices[0] * 100
-        rows.append(dict(
-            ticker=t, price=round(prices[-1], 2),
-            change=round(chg, 2),
-            volume=random.randint(5_000_000, 80_000_000),
-            mktcap=round(bases[t] * random.uniform(5e9, 3e12) / 1e12, 2),
-            sparkline=prices,
-        ))
-    return rows
-
-def make_sparkline(prices, color):
-    fig = go.Figure(go.Scatter(
-        y=prices, mode="lines",
-        line=dict(color=color, width=1.5),
-        fill="tozeroy",
-        fillcolor=color.replace(")", ", 0.1)").replace("rgb", "rgba") if "rgb" in color else color + "22",
-    ))
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)", xaxis=dict(visible=False), yaxis=dict(visible=False),
-        height=40, width=120,
-    )
-    return fig
-
-def make_breadth_gauge(pct_up):
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=pct_up,
-        number=dict(suffix="%", font=dict(color=COLORS["text"], size=28, family="JetBrains Mono")),
-        gauge=dict(
-            axis=dict(range=[0, 100], tickcolor=COLORS["muted"], tickfont=dict(color=COLORS["muted"])),
-            bar=dict(color=COLORS["accent"]),
-            bgcolor=COLORS["surface2"],
-            bordercolor=COLORS["border"],
-            steps=[
-                dict(range=[0,  40], color="rgba(255,77,109,.15)"),
-                dict(range=[40, 60], color="rgba(100,116,139,.1)"),
-                dict(range=[60,100], color="rgba(0,201,141,.15)"),
-            ],
-            threshold=dict(line=dict(color=COLORS["accent"], width=2), thickness=.75, value=pct_up),
-        ),
-        title=dict(text="Market Breadth — % Advancing", font=dict(color=COLORS["muted"], size=11)),
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", font_color=COLORS["text"],
-        height=220, margin=dict(l=20, r=20, t=40, b=10),
-    )
-    return fig
-
-def make_sentiment_heatmap(data):
-    tickers = [d["ticker"] for d in data]
-    values  = [d["change"] for d in data]
-    fig = go.Figure(go.Treemap(
-        labels=tickers, parents=[""] * len(tickers),
-        values=[abs(v) + 1 for v in values],
-        customdata=list(zip(tickers, values)),
-        hovertemplate="<b>%{customdata[0]}</b><br>Change: %{customdata[1]:+.2f}%<extra></extra>",
-        marker=dict(
-            colors=values,
-            colorscale=[[0, "#ff4d6d"], [0.5, "#161b27"], [1, "#00c98d"]],
-            cmid=0,
-            line=dict(color="#050810", width=2),
-        ),
-        texttemplate="<b>%{label}</b><br>%{customdata[1]:+.2f}%",
-        textfont=dict(color="white", size=13),
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", margin=dict(l=0, r=0, t=0, b=0),
-        height=220,
-    )
-    return fig
-
-# ── Layout ────────────────────────────────────────────────────────────────────
 layout = html.Div([
-    dcc.Interval(id="ov-refresh", interval=60_000, n_intervals=0),
-
-    # Metric tiles (filled by callback)
-    html.Div(id="ov-metrics", className="metric-grid"),
-
+    # Header
     html.Div([
-        # Prices table
         html.Div([
-            html.Div("Live Prices", className="dash-card-title"),
-            html.Div(id="ov-table"),
-        ], className="dash-card"),
-
-        # Right column: gauge + heatmap
-        html.Div([
-            html.Div([
-                html.Div("Market Breadth", className="dash-card-title"),
-                dcc.Graph(id="ov-gauge", config=dict(displayModeBar=False)),
-            ], className="dash-card"),
-            html.Div([
-                html.Div("Sentiment Heatmap", className="dash-card-title"),
-                dcc.Graph(id="ov-heatmap", config=dict(displayModeBar=False)),
-            ], className="dash-card"),
+            html.Span("MARKET OVERVIEW", style={"fontFamily":"'IBM Plex Mono',monospace",
+                                                 "fontWeight":"600","fontSize":"13px",
+                                                 "color":COLORS["text"],"letterSpacing":"3px"}),
+            html.Div(id="last-update-time", style={"fontFamily":"'IBM Plex Mono',monospace",
+                                                     "fontSize":"10px","color":COLORS["dim"],
+                                                     "marginTop":"3px"}),
         ]),
-    ], className="two-col"),
+        html.Div([
+            dcc.Dropdown(id="ticker-select", options=[{"label":t,"value":t} for t in TICKERS],
+                         value="AAPL", clearable=False,
+                         style={"width":"160px","fontFamily":"'IBM Plex Mono',monospace",
+                                "fontSize":"12px","background":COLORS["elevated"],
+                                "color":COLORS["text"],"border":f"1px solid {COLORS['border']}"}),
+            dcc.Dropdown(id="days-select",
+                         options=[{"label":"7D","value":7},{"label":"30D","value":30},
+                                  {"label":"90D","value":90},{"label":"1Y","value":365}],
+                         value=90, clearable=False,
+                         style={"width":"100px","fontFamily":"'IBM Plex Mono',monospace",
+                                "fontSize":"12px","background":COLORS["elevated"],
+                                "color":COLORS["text"],"border":f"1px solid {COLORS['border']}",
+                                "marginLeft":"8px"}),
+        ], style={"display":"flex","alignItems":"center"}),
+    ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
+              "marginBottom":"24px"}),
 
-    # Top movers
+    # KPI Cards row
     html.Div([
-        html.Div("Top Movers", className="dash-card-title"),
-        html.Div(id="ov-movers"),
-    ], className="dash-card"),
+        _card("LAST CLOSE",   "kpi-close",  "kpi-chg",    COLORS["blue"]),
+        _card("DAILY VOLUME", "kpi-vol",    None,          COLORS["purple"]),
+        _card("RSI (14)",     "kpi-rsi",    "kpi-rsi-sig", COLORS["amber"]),
+        _card("52W HIGH",     "kpi-52h",    None,          COLORS["green"]),
+        _card("52W LOW",      "kpi-52l",    None,          COLORS["red"]),
+    ], style={"display":"flex","gap":"12px","marginBottom":"20px","flexWrap":"wrap"}),
+
+    # Main chart — candlestick + volume
+    dcc.Loading(type="circle", color=COLORS["blue"], children=[
+        dcc.Graph(id="candle-chart", config={"displayModeBar":False},
+                  style={"borderRadius":"6px","border":f"1px solid {COLORS['border']}",
+                         "marginBottom":"20px"}),
+    ]),
+
+    # Bottom row: macro chart + top movers
+    html.Div([
+        html.Div([
+            html.Div("MACRO INDICATORS", style={"fontFamily":"'IBM Plex Mono',monospace",
+                                                  "fontSize":"10px","letterSpacing":"2px",
+                                                  "color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="dot", color=COLORS["blue"], children=[
+                dcc.Graph(id="macro-chart", config={"displayModeBar":False},
+                          style={"height":"260px"}),
+            ]),
+        ], style={"flex":"1","background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+
+        html.Div([
+            html.Div("TOP MOVERS  (24H)", style={"fontFamily":"'IBM Plex Mono',monospace",
+                                                    "fontSize":"10px","letterSpacing":"2px",
+                                                    "color":COLORS["muted"],"marginBottom":"12px"}),
+            dcc.Loading(type="dot", color=COLORS["blue"], children=[
+                html.Div(id="top-movers-table"),
+            ]),
+        ], style={"width":"340px","background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+                   "borderRadius":"6px","padding":"16px"}),
+    ], style={"display":"flex","gap":"16px"}),
+
+    dcc.Interval(id="overview-refresh", interval=60_000, n_intervals=0),
 ])
 
-# ── Callbacks ─────────────────────────────────────────────────────────────────
+
+# ── Candlestick + Volume ──────────────────────────────────────────────────────
 @callback(
-    Output("ov-metrics",  "children"),
-    Output("ov-table",    "children"),
-    Output("ov-gauge",    "figure"),
-    Output("ov-heatmap",  "figure"),
-    Output("ov-movers",   "children"),
-    Input("ov-refresh",   "n_intervals"),
+    [Output("candle-chart","figure"),
+     Output("kpi-close","children"), Output("kpi-chg","children"),
+     Output("kpi-vol","children"),   Output("kpi-rsi","children"),
+     Output("kpi-rsi-sig","children"),Output("kpi-52h","children"),
+     Output("kpi-52l","children"),   Output("last-update-time","children")],
+    [Input("ticker-select","value"), Input("days-select","value"),
+     Input("overview-refresh","n_intervals")],
 )
-def refresh(_):
-    data = generate_market_data()
-    advances = sum(1 for d in data if d["change"] > 0)
-    pct_up   = round(advances / len(data) * 100, 1)
+def update_candle(ticker, days, _):
+    from datetime import datetime
+    empty = go.Figure()
+    empty.update_layout(**PLOT_BASE, title="No data")
+    defaults = (empty,) + ("—",)*7 + ("—",)
 
-    # ── Metric tiles ──────────────────────────────────────────────────────────
-    spy    = next(d for d in data if d["ticker"] == "SPY")
-    best   = max(data, key=lambda x: x["change"])
-    worst  = min(data, key=lambda x: x["change"])
-    vol    = sum(d["volume"] for d in data)
-    tiles  = [
-        ("SPY",      f"${spy['price']}", f"{spy['change']:+.2f}%", "pos" if spy['change']>=0 else "neg"),
-        ("Advancing",f"{advances}/{len(data)}", f"{pct_up}% up",  "pos" if pct_up > 50 else "neg"),
-        ("Best",     best["ticker"],     f"+{best['change']:.2f}%","pos"),
-        ("Worst",    worst["ticker"],    f"{worst['change']:.2f}%","neg"),
-        ("Volume",   f"{vol/1e9:.1f}B",  "shares traded",          "neu"),
-    ]
-    metric_els = [
-        html.Div([
-            html.Div(label,  className="metric-tile-label"),
-            html.Div(value,  className="metric-tile-value"),
-            html.Div(delta,  className=f"metric-tile-delta {cls}"),
-        ], className="metric-tile")
-        for label, value, delta, cls in tiles
-    ]
+    try:
+        r = requests.get(f"{API_BASE}/prices/{ticker}/history",
+                         params={"days": days}, headers=HEADERS, timeout=6)
+        if r.status_code != 200:
+            return defaults
+        data = r.json()
+        if not data:
+            return defaults
+        df = pd.DataFrame(data)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp")
+    except Exception:
+        return defaults
 
-    # ── Prices table ──────────────────────────────────────────────────────────
+    # Chart
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                        row_heights=[0.72, 0.28], vertical_spacing=0.02)
+    # Candles
+    fig.add_trace(go.Candlestick(
+        x=df["timestamp"], open=df["open"], high=df["high"],
+        low=df["low"], close=df["close"], name=ticker,
+        increasing_line_color=COLORS["green"], decreasing_line_color=COLORS["red"],
+        increasing_fillcolor=COLORS["green"]+"55", decreasing_fillcolor=COLORS["red"]+"55",
+    ), row=1, col=1)
+    # Bollinger
+    if "bb_upper" in df.columns:
+        fig.add_trace(go.Scatter(x=df["timestamp"], y=df["bb_upper"], name="BB Upper",
+                                  line=dict(color=COLORS["purple"]+"88", width=1, dash="dot"),
+                                  showlegend=False), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df["timestamp"], y=df["bb_lower"], name="BB Lower",
+                                  line=dict(color=COLORS["purple"]+"88", width=1, dash="dot"),
+                                  fill="tonexty", fillcolor=COLORS["purple"]+"11",
+                                  showlegend=False), row=1, col=1)
+    # Volume
+    colors_v = [COLORS["green"] if c >= o else COLORS["red"]
+                for c, o in zip(df["close"], df["open"])]
+    fig.add_trace(go.Bar(x=df["timestamp"], y=df["volume"], name="Volume",
+                          marker_color=colors_v, opacity=0.6,
+                          showlegend=False), row=2, col=1)
+
+    layout_update = {**PLOT_BASE,
+                     "xaxis_rangeslider_visible": False,
+                     "title": dict(text=f"<b>{ticker}</b>  |  {days}D",
+                                   font=dict(family="'IBM Plex Mono',monospace",
+                                             size=13, color=COLORS["text"])),
+                     "height": 460}
+    fig.update_layout(**layout_update)
+    fig.update_xaxes(showgrid=True, gridcolor=COLORS["border"])
+    fig.update_yaxes(showgrid=True, gridcolor=COLORS["border"])
+
+    # KPIs
+    last = df.iloc[-1]
+    prev = df.iloc[-2] if len(df) > 1 else last
+    chg = (last["close"] - prev["close"]) / prev["close"] * 100
+    chg_str = f"{'▲' if chg >= 0 else '▼'} {abs(chg):.2f}%"
+    chg_col = COLORS["green"] if chg >= 0 else COLORS["red"]
+    rsi_val  = round(last.get("rsi", 0), 1) if "rsi" in last else "—"
+    rsi_sig  = "OVERBOUGHT" if rsi_val != "—" and rsi_val > 70 else \
+               "OVERSOLD" if rsi_val != "—" and rsi_val < 30 else "NEUTRAL"
+    vol_m    = f"{last['volume']/1_000_000:.1f}M"
+    hi52     = f"${df['high'].max():.2f}"
+    lo52     = f"${df['low'].min():.2f}"
+    ts       = f"Updated {datetime.utcnow().strftime('%H:%M UTC')}"
+
+    return (fig, f"${last['close']:.2f}",
+            html.Span(chg_str, style={"color":chg_col}),
+            vol_m, f"{rsi_val}", rsi_sig, hi52, lo52, ts)
+
+
+# ── Macro Chart ───────────────────────────────────────────────────────────────
+@callback(Output("macro-chart","figure"),
+          [Input("overview-refresh","n_intervals")])
+def update_macro(_):
+    try:
+        r = requests.get(f"{API_BASE}/macro", headers=HEADERS, timeout=6)
+        if r.status_code != 200:
+            raise ValueError
+        data = r.json()
+        df = pd.DataFrame(data)
+        df["date"] = pd.to_datetime(df["date"])
+    except Exception:
+        fig = go.Figure()
+        fig.update_layout(**PLOT_BASE, title="Macro data unavailable", height=220)
+        return fig
+
+    fig = go.Figure()
+    palette = [COLORS["blue"], COLORS["amber"], COLORS["green"], COLORS["purple"], COLORS["red"]]
+    for i, indicator in enumerate(df["indicator_name"].unique()[:5]):
+        sub = df[df["indicator_name"] == indicator].sort_values("date")
+        fig.add_trace(go.Scatter(x=sub["date"], y=sub["value"], name=indicator,
+                                  line=dict(color=palette[i], width=1.5), mode="lines"))
+    fig.update_layout(**PLOT_BASE, height=220,
+                      title=dict(text="MACRO INDICATORS",
+                                 font=dict(size=11, color=COLORS["muted"])))
+    return fig
+
+
+# ── Top Movers ────────────────────────────────────────────────────────────────
+@callback(Output("top-movers-table","children"),
+          [Input("overview-refresh","n_intervals")])
+def update_movers(_):
     rows = []
-    for d in data:
-        color  = COLORS["green"] if d["change"] >= 0 else COLORS["red"]
-        spark  = make_sparkline(d["sparkline"], color)
-        badge  = "badge-pos" if d["change"] >= 0 else "badge-neg"
-        rows.append(html.Tr([
-            html.Td(html.Strong(d["ticker"]), style={"color": COLORS["text"]}),
-            html.Td(f"${d['price']:,.2f}"),
-            html.Td(html.Span(f"{d['change']:+.2f}%", className=badge)),
-            html.Td(f"{d['volume']/1e6:.1f}M"),
-            html.Td(f"${d['mktcap']:.2f}T"),
-            html.Td(dcc.Graph(figure=spark, config=dict(displayModeBar=False), style=dict(height="40px", width="120px"))),
-        ]))
-    table = html.Table([
-        html.Thead(html.Tr([html.Th(h) for h in ["Ticker","Price","Change","Volume","Mkt Cap","1D Spark"]])),
-        html.Tbody(rows),
-    ], className="dash-table")
+    for t in TICKERS[:10]:
+        try:
+            r = requests.get(f"{API_BASE}/prices/{t}/history",
+                             params={"days":2}, headers=HEADERS, timeout=4)
+            if r.status_code != 200:
+                continue
+            d = r.json()
+            if len(d) < 2:
+                continue
+            df = pd.DataFrame(d).sort_values("timestamp")
+            c, p = df.iloc[-1]["close"], df.iloc[-2]["close"]
+            chg = (c - p) / p * 100
+            rows.append((t, c, chg))
+        except Exception:
+            pass
 
-    # ── Top movers ────────────────────────────────────────────────────────────
-    sorted_data  = sorted(data, key=lambda x: x["change"], reverse=True)
-    gainers = sorted_data[:3]
-    losers  = sorted_data[-3:][::-1]
-    mover_els = []
-    for label, items, cls in [("Gainers", gainers, "pos"), ("Losers", losers, "neg")]:
-        mover_els.append(html.Div([
-            html.Div(label, className=f"dash-card-title {cls}"),
-            html.Div([
-                html.Div([
-                    html.Strong(d["ticker"], style={"color": COLORS["text"], "marginRight": "10px"}),
-                    html.Span(f"{d['change']:+.2f}%", className=f"badge-{'pos' if d['change']>0 else 'neg'}"),
-                ], style={"padding": "8px 0", "borderBottom": f"1px solid {COLORS['border']}"})
-                for d in items
-            ]),
-        ], style={"flex": "1"}))
-    movers_layout = html.Div(mover_els, style={"display": "flex", "gap": "40px"})
+    rows.sort(key=lambda x: abs(x[2]), reverse=True)
+    return html.Table(
+        [html.Thead(html.Tr([
+            html.Th("TICKER", style=_th()), html.Th("PRICE", style=_th()),
+            html.Th("CHG %", style=_th()),
+        ]))] +
+        [html.Tbody([
+            html.Tr([
+                html.Td(r[0], style=_td(COLORS["text"])),
+                html.Td(f"${r[1]:.2f}", style=_td(COLORS["muted"])),
+                html.Td(
+                    f"{'▲' if r[2]>=0 else '▼'} {abs(r[2]):.2f}%",
+                    style=  _td(COLORS["green"] if r[2]>=0 else COLORS["red"]),
+                ),
+            ]) for r in rows
+        ])],
+        style={"width":"100%","borderCollapse":"collapse","fontFamily":"'IBM Plex Mono',monospace"},
+    )
 
-    return metric_els, table, make_breadth_gauge(pct_up), make_sentiment_heatmap(data), movers_layout
+def _th():
+    return {"fontSize":"9px","color":COLORS["dim"],"letterSpacing":"2px",
+            "padding":"6px 8px","textAlign":"left","borderBottom":f"1px solid {COLORS['border']}"}
+def _td(color):
+    return {"fontSize":"12px","color":color,"padding":"7px 8px",
+            "borderBottom":f"1px solid {COLORS['border']}22"}
