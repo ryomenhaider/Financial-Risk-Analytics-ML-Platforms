@@ -5,9 +5,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import os
 
-API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
-API_KEY  = os.getenv("DASHBOARD_API_KEY", "changeme")
-HEADERS  = {"X-API-Key": API_KEY}
+API_BASE   = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_HEALTH = "http://localhost:8000/health"
+HEADERS    = {"X-API-Key": os.getenv("DASHBOARD_API_KEY", "changeme")}
+
 
 COLORS = {
     "bg":       "#0A0E17", "card":    "#111827", "elevated": "#1C2333",

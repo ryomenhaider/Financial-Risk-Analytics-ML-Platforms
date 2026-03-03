@@ -6,11 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output
 import os, requests, dash
-from dashboard.theme import COLORS, API_BASE, API_KEY, HEADERS  # ← from theme
-
-API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
-API_KEY  = os.getenv("DASHBOARD_API_KEY", "changeme")
-HEADERS  = {"X-API-Key": API_KEY}
+from dashboard.theme import COLORS, API_BASE, HEADERS, API_HEALTH  # ← from theme
 
 # ── Shared design tokens (all pages import from here) ─────────────────────
 COLORS = {
@@ -91,7 +87,7 @@ app.layout = html.Div([
 def _ping(_):
     dot, label, color = "●", "LIVE", COLORS["green"]
     try:
-        r = requests.get(f"{API_BASE}/health", timeout=2, headers=HEADERS)
+        r = requests.get(API_HEALTH, timeout=2, headers=HEADERS)
         if r.status_code != 200:
             dot, label, color = "●", "DEGRADED", COLORS["amber"]
     except Exception:

@@ -26,36 +26,57 @@ async def get_latest_price(ticker: str):
             logger.error(f'Error: {e}')
             raise HTTPException(status_code=500, detail="Internal server error") 
 
-@router.get("/{ticker}/history", response_model=MarketDataResponse)
+@router.get("/{ticker}/history")
 async def get_price_history(ticker: str, limit: int = 90):
     with get_session() as session:
         try:
             rows = get_latest_prices(session, ticker, limit)
             if not rows:
                 raise HTTPException(status_code=404, detail=f'{ticker} not found')
-            return {
-                ticker: rows
-            }
+            # Return sorted by date descending
+            return [
+                {
+                    "ticker": row.ticker,
+                    "date": row.date.isoformat() if hasattr(row.date, 'isoformat') else str(row.date),
+                    "open": float(row.open) if row.open else None,
+                    "high": float(row.high) if row.high else None,
+                    "low": float(row.low) if row.low else None,
+                    "close": float(row.close),
+                    "volume": row.volume,
+                    "created_at": row.created_at.isoformat() if hasattr(row.created_at, 'isoformat') else str(row.created_at),
+                }
+                for row in rows
+            ]
         except HTTPException:
             raise  
         except Exception as e:
             logger.error(f'Error: {e}')
             raise HTTPException(status_code=500, detail="Internal server error")  
 
-@router.get("/compare", response_model=MarketDataResponse)
+@router.get("/compare")
 async def compare_tickers(tickers: str):
     with get_session() as session:
         try:
-            rows = {}
-            tickers = tickers.split(',')
-            if not tickers:
+            result = {}
+            ticker_list = tickers.split(',')
+            if not ticker_list:
                 raise HTTPException(status_code=404, detail='Say Something!')
-            for ticker in tickers:
+            for ticker in ticker_list:
+                ticker = ticker.strip()
                 row = get_latest_prices(session, ticker, limit=1)
                 if not row:
                     raise HTTPException(status_code=404, detail=f"{ticker} Not found")
-                rows[ticker] = row[0]
-            return rows
+                result[ticker] = {
+                    "ticker": row[0].ticker,
+                    "date": row[0].date.isoformat() if hasattr(row[0].date, 'isoformat') else str(row[0].date),
+                    "open": float(row[0].open) if row[0].open else None,
+                    "high": float(row[0].high) if row[0].high else None,
+                    "low": float(row[0].low) if row[0].low else None,
+                    "close": float(row[0].close),
+                    "volume": row[0].volume,
+                    "created_at": row[0].created_at.isoformat() if hasattr(row[0].created_at, 'isoformat') else str(row[0].created_at),
+                }
+            return result
         except HTTPException:
             raise  
         except Exception as e:

@@ -4,9 +4,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import dash, requests
-from dash import dcc, html, Input, Output, callback
+from dash import dcc, html, Input, Output, callback, State
 import plotly.graph_objects as go
 import pandas as pd
+from datetime import datetime, timedelta
 from dashboard.theme import COLORS, PLOT_BASE, API_BASE, HEADERS  # ✅ safe
 dash.register_page(__name__, path="/forecasts", name="Forecasting Center", order=2)
 
@@ -60,11 +61,11 @@ layout = html.Div([
 
     # Metric cards
     html.Div([
-        _metric_card("MAE",         "fc-mae",  COLORS["blue"]),
-        _metric_card("MAPE",        "fc-mape", COLORS["amber"]),
-        _metric_card("RMSE",        "fc-rmse", COLORS["purple"]),
-        _metric_card("MODEL",       "fc-model", COLORS["green"]),
-        _metric_card("HORIZON",     "fc-horiz", COLORS["muted"]),
+        _metric_card("YHAT",       "fc-latest", COLORS["blue"]),
+        _metric_card("YHAT_UPPER", "fc-upper",  COLORS["green"]),
+        _metric_card("YHAT_LOWER", "fc-lower",  COLORS["red"]),
+        _metric_card("MODEL",      "fc-model",  COLORS["purple"]),
+        _metric_card("HORIZON",    "fc-horiz",  COLORS["muted"]),
     ], style={"display":"flex","gap":"12px","marginBottom":"20px","flexWrap":"wrap"}),
 
     # Main forecast chart
@@ -74,155 +75,215 @@ layout = html.Div([
                          "marginBottom":"20px"}),
     ]),
 
-    # Feature importance + model comparison
+    # Comparison section
     html.Div([
+        html.Div("FORECAST COMPARISON", style={"fontFamily":"'IBM Plex Mono',monospace",
+                                                 "fontSize":"10px","letterSpacing":"2px",
+                                                 "color":COLORS["dim"],"marginBottom":"12px"}),
         html.Div([
-            html.Div("XGBOOST FEATURE IMPORTANCE",
-                     style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
-                             "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
-            dcc.Loading(type="dot", color=COLORS["blue"], children=[
-                dcc.Graph(id="fc-feat-chart", config={"displayModeBar":False},
-                          style={"height":"320px"}),
-            ]),
-        ], style={"flex":"1","background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
-                   "borderRadius":"6px","padding":"16px"}),
+            dcc.Input(id="fc-compare-tickers", type="text", placeholder="Enter tickers (e.g., AAPL,MSFT,GOOGL)",
+                      style={"flex":"1","padding":"8px 12px","fontFamily":"'IBM Plex Mono',monospace",
+                             "fontSize":"12px","background":COLORS["elevated"],
+                             "border":f"1px solid {COLORS['border']}","borderRadius":"4px",
+                             "color":COLORS["text"]}),
+            html.Button("COMPARE", id="fc-compare-btn", n_clicks=0,
+                       style={"marginLeft":"8px","padding":"8px 16px","fontFamily":"'IBM Plex Mono',monospace",
+                              "fontSize":"10px","fontWeight":"600","background":COLORS["blue"],
+                              "color":COLORS["bg"],"border":"none","borderRadius":"4px","cursor":"pointer"}),
+        ], style={"display":"flex","gap":"8px","marginBottom":"16px"}),
+        dcc.Loading(type="dot", color=COLORS["blue"], children=[
+            dcc.Graph(id="fc-compare-chart", config={"displayModeBar":False},
+                      style={"borderRadius":"6px","border":f"1px solid {COLORS['border']}"}),
+        ]),
+    ], style={"background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+              "borderRadius":"6px","padding":"16px","marginBottom":"20px"}),
 
-        html.Div([
-            html.Div("FORECAST TABLE (NEXT 10 DAYS)",
-                     style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
-                             "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
-            dcc.Loading(type="dot", color=COLORS["blue"], children=[
-                html.Div(id="fc-table"),
-            ]),
-        ], style={"width":"340px","background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
-                   "borderRadius":"6px","padding":"16px"}),
-    ], style={"display":"flex","gap":"16px"}),
+    # Forecast table
+    html.Div([
+        html.Div("FORECAST TABLE (NEXT 10 DAYS)",
+                 style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                         "letterSpacing":"2px","color":COLORS["muted"],"marginBottom":"12px"}),
+        dcc.Loading(type="dot", color=COLORS["blue"], children=[
+            html.Div(id="fc-table"),
+        ]),
+    ], style={"background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
+              "borderRadius":"6px","padding":"16px"}),
 ])
 
 
 
 @callback(
-    [Output("fc-main-chart","figure"), Output("fc-feat-chart","figure"),
-     Output("fc-table","children"),
-     Output("fc-mae","children"), Output("fc-mape","children"),
-     Output("fc-rmse","children"), Output("fc-model","children"),
+    [Output("fc-main-chart","figure"), Output("fc-table","children"),
+     Output("fc-latest","children"), Output("fc-upper","children"),
+     Output("fc-lower","children"), Output("fc-model","children"),
      Output("fc-horiz","children")],
     [Input("fc-ticker","value"), Input("fc-horizon","value")],
 )
 def update_forecast(ticker, horizon):
     empty = go.Figure()
     empty.update_layout(**PLOT_BASE)
-    defaults = (empty, empty, html.Div("No data"), "—","—","—","—","—")
+    defaults = (empty, html.Div("No data"), "—","—","—","—","—")
 
     try:
-        r = requests.get(f"{API_BASE}/forecast/{ticker}",
+        # Fetch forecasts from endpoint: GET /forecasts/{ticker}?horizon=30
+        r = requests.get(f"{API_BASE}/forecasts/{ticker}",
                          params={"horizon": horizon}, headers=HEADERS, timeout=8)
         if r.status_code != 200:
             return defaults
         payload = r.json()
-    except Exception:
+    except Exception as e:
         return defaults
 
-    # Support both flat list and dict with 'forecast' + 'metrics' keys
-    if isinstance(payload, list):
-        fc_rows = payload
-        metrics = {}
-    else:
-        fc_rows  = payload.get("forecast", payload.get("predictions", []))
-        metrics  = payload.get("metrics", {})
-
-    if not fc_rows:
+    # payload should be list[ForecastResponse]
+    if not isinstance(payload, list) or not payload:
         return defaults
 
-    fc  = pd.DataFrame(fc_rows)
-    fc["forecast_date"] = pd.to_datetime(fc.get("forecast_date", fc.get("ds", fc.get("date"))))
-    yhat = fc.get("predicted_close", fc.get("yhat", fc.get("predicted_price")))
+    fc = pd.DataFrame(payload)
+    
+    # Ensure forecast_date is datetime
+    fc["forecast_date"] = pd.to_datetime(fc["forecast_date"])
+    fc = fc.sort_values("forecast_date").reset_index(drop=True)
 
-    # Historical prices for context
+    # Fetch historical prices for context
     try:
         rh = requests.get(f"{API_BASE}/prices/{ticker}/history",
-                          params={"days": 60}, headers=HEADERS, timeout=6)
-        hist = pd.DataFrame(rh.json())
-        hist["timestamp"] = pd.to_datetime(hist["timestamp"])
-        hist = hist.sort_values("timestamp")
+                          params={"limit": 90}, headers=HEADERS, timeout=6)
+        if rh.status_code == 200:
+            hist = pd.DataFrame(rh.json())
+            hist["date"] = pd.to_datetime(hist["date"])
+            hist = hist.sort_values("date")
+        else:
+            hist = pd.DataFrame()
     except Exception:
         hist = pd.DataFrame()
-
-    # Main chart
+    # Build main chart
     fig = go.Figure()
-    if not hist.empty:
+    
+    # Add historical prices
+    if not hist.empty and "close" in hist.columns:
         fig.add_trace(go.Scatter(
-            x=hist["timestamp"], y=hist["close"], name="Actual",
+            x=hist["date"], y=hist["close"], name="Historical",
             line=dict(color=COLORS["blue"], width=2), mode="lines",
         ))
-    # Confidence band
+    
+    # Add confidence band
     if "yhat_upper" in fc.columns and "yhat_lower" in fc.columns:
         fig.add_trace(go.Scatter(
             x=list(fc["forecast_date"]) + list(fc["forecast_date"])[::-1],
             y=list(fc["yhat_upper"]) + list(fc["yhat_lower"])[::-1],
             fill="toself", fillcolor=COLORS["green"]+"18",
-            line=dict(color="rgba(0,0,0,0)"), name="Confidence Band", showlegend=True,
+            line=dict(color="rgba(0,0,0,0)"), name="95% Confidence Band", 
+            showlegend=True, hoverinfo="skip",
         ))
-    # Forecast line
-    y_col = "predicted_close" if "predicted_close" in fc.columns else \
-            "yhat" if "yhat" in fc.columns else "predicted_price"
-    if y_col in fc.columns:
+    
+    # Add forecast line
+    if "yhat" in fc.columns:
         fig.add_trace(go.Scatter(
-            x=fc["forecast_date"], y=fc[y_col], name="Forecast",
-            line=dict(color=COLORS["green"], width=2, dash="dash"), mode="lines",
+            x=fc["forecast_date"], y=fc["yhat"], name="Forecast",
+            line=dict(color=COLORS["green"], width=2, dash="dash"), mode="lines+markers",
         ))
+    
     fig.update_layout(**PLOT_BASE, height=400,
-                       title=dict(text=f"<b>{ticker}</b>  ·  {horizon}-Day Price Forecast",
+                       title=dict(text=f"<b>{ticker}</b>  ·  {horizon}-Day Forecast",
                                   font=dict(size=12, color=COLORS["text"])))
 
-    # Feature importance
-    fi_fig = go.Figure()
-    feat_imp = metrics.get("feature_importance") or payload.get("feature_importance")
-    if feat_imp and isinstance(feat_imp, dict):
-        sorted_f = sorted(feat_imp.items(), key=lambda x: x[1], reverse=True)[:15]
-        names = [f[0] for f in sorted_f]
-        vals  = [f[1] for f in sorted_f]
-        fi_fig.add_trace(go.Bar(x=vals, y=names, orientation="h",
-                                 marker_color=COLORS["blue"], opacity=0.85))
-    else:
-        fi_fig.add_annotation(text="Feature importance not available",
-                               x=0.5, y=0.5, showarrow=False,
-                               font=dict(color=COLORS["muted"], size=12))
-    fi_fig.update_layout(**PLOT_BASE, height=280,
-                          xaxis_title="Importance Score",
-                          title=dict(text="TOP FEATURES", font=dict(size=11, color=COLORS["muted"])))
-
-    # Forecast table
-    y_vals = fc[y_col] if y_col in fc.columns else pd.Series([])
+    # Build forecast table
     rows = []
     for _, row in fc.head(10).iterrows():
-        pred = row.get(y_col, 0)
-        lo   = row.get("yhat_lower", row.get("lower", "—"))
-        hi   = row.get("yhat_upper", row.get("upper", "—"))
+        date_str = str(row["forecast_date"])[:10]
+        yhat = f"${row.get('yhat', 0):.2f}" if pd.notna(row.get('yhat')) else "—"
+        upper = f"${row.get('yhat_upper', 0):.2f}" if pd.notna(row.get('yhat_upper')) else "—"
+        lower = f"${row.get('yhat_lower', 0):.2f}" if pd.notna(row.get('yhat_lower')) else "—"
+        
         rows.append(html.Tr([
-            html.Td(str(row["forecast_date"])[:10], style=_td(COLORS["muted"])),
-            html.Td(f"${pred:.2f}",                style=_td(COLORS["green"])),
-            html.Td(f"${lo:.2f}" if isinstance(lo,(int,float)) else str(lo), style=_td(COLORS["dim"])),
-            html.Td(f"${hi:.2f}" if isinstance(hi,(int,float)) else str(hi), style=_td(COLORS["dim"])),
+            html.Td(date_str, style=_td(COLORS["muted"])),
+            html.Td(yhat, style=_td(COLORS["green"])),
+            html.Td(lower, style=_td(COLORS["dim"])),
+            html.Td(upper, style=_td(COLORS["dim"])),
         ]))
+    
     table = html.Table(
         [html.Thead(html.Tr([
             html.Th("DATE", style=_th()), html.Th("FORECAST", style=_th()),
-            html.Th("LOW CI", style=_th()),  html.Th("HIGH CI", style=_th()),
+            html.Th("LOWER BOUND", style=_th()),  html.Th("UPPER BOUND", style=_th()),
         ]))] + [html.Tbody(rows)],
         style={"width":"100%","borderCollapse":"collapse","fontFamily":"'IBM Plex Mono',monospace"},
     )
 
-    mae   = f"{metrics.get('test_mae', metrics.get('mae','—')):.4f}" if isinstance(metrics.get('test_mae',metrics.get('mae')), (int,float)) else "—"
-    mape  = f"{metrics.get('test_mape', metrics.get('mape','—')):.2f}%" if isinstance(metrics.get('test_mape',metrics.get('mape')), (int,float)) else "—"
-    rmse  = f"{metrics.get('rmse','—'):.4f}" if isinstance(metrics.get('rmse'), (int,float)) else "—"
-    model = (payload.get("model_version") or payload.get("model","XGBoost+Prophet"))[:12]
+    # Extract latest forecast values for metric cards
+    latest = fc.iloc[-1] if not fc.empty else {}
+    yhat_val = f"${latest.get('yhat', 0):.2f}" if pd.notna(latest.get('yhat')) else "—"
+    upper_val = f"${latest.get('yhat_upper', 0):.2f}" if pd.notna(latest.get('yhat_upper')) else "—"
+    lower_val = f"${latest.get('yhat_lower', 0):.2f}" if pd.notna(latest.get('yhat_lower')) else "—"
+    model = latest.get("model_used", "Prophet")[:15] if pd.notna(latest.get("model_used")) else "—"
 
-    return fig, fi_fig, table, mae, mape, rmse, model, f"{horizon}D"
+    return fig, table, yhat_val, upper_val, lower_val, model, f"{horizon}D"
+
+
+@callback(
+    Output("fc-compare-chart", "figure"),
+    [Input("fc-compare-btn", "n_clicks"), Input("fc-horizon", "value")],
+    State("fc-compare-tickers", "value"),
+    prevent_initial_call=True,
+)
+def update_compare(n_clicks, horizon, tickers_str):
+    if not tickers_str or not tickers_str.strip():
+        empty = go.Figure()
+        empty.update_layout(**PLOT_BASE)
+        return empty
+
+    try:
+        # Use compare endpoint: GET /forecasts/compare?tickers=AAPL,MSFT&horizon=30
+        tickers = ",".join([t.strip().upper() for t in tickers_str.split(",")])
+        r = requests.get(f"{API_BASE}/forecasts/compare",
+                         params={"tickers": tickers, "horizon": horizon}, 
+                         headers=HEADERS, timeout=10)
+        if r.status_code != 200:
+            empty = go.Figure()
+            empty.update_layout(**PLOT_BASE)
+            return empty
+        
+        payload = r.json()
+    except Exception:
+        empty = go.Figure()
+        empty.update_layout(**PLOT_BASE)
+        return empty
+
+    fig = go.Figure()
+    
+    # payload should be dict with ticker keys
+    if not isinstance(payload, dict):
+        empty = go.Figure()
+        empty.update_layout(**PLOT_BASE)
+        return empty
+
+    colors_list = [COLORS["blue"], COLORS["green"], COLORS["amber"], COLORS["red"], COLORS["purple"]]
+    
+    for idx, (ticker, data) in enumerate(payload.items()):
+        if not isinstance(data, list):
+            data = [data]
+        
+        df = pd.DataFrame(data)
+        if "forecast_date" in df.columns and "yhat" in df.columns:
+            df["forecast_date"] = pd.to_datetime(df["forecast_date"])
+            df = df.sort_values("forecast_date")
+            
+            color = colors_list[idx % len(colors_list)]
+            fig.add_trace(go.Scatter(
+                x=df["forecast_date"], y=df["yhat"], name=ticker,
+                line=dict(color=color, width=2), mode="lines+markers",
+            ))
+
+    fig.update_layout(**PLOT_BASE, height=350, hovermode="x unified",
+                       title=dict(text="FORECAST COMPARISON", 
+                                  font=dict(size=11, color=COLORS["muted"])))
+    
+    return fig
 
 def _th():
     return {"fontSize":"9px","color":COLORS["dim"],"letterSpacing":"1.5px",
             "padding":"5px 6px","textAlign":"left","borderBottom":f"1px solid {COLORS['border']}"}
+
 def _td(color):
     return {"fontFamily":"'IBM Plex Mono',monospace","fontSize":"11px","color":color,
             "padding":"6px 6px","borderBottom":f"1px solid {COLORS['border']}22"}

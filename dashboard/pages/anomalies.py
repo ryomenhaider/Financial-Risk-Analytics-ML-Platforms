@@ -121,6 +121,9 @@ layout = html.Div([
 ])
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 @callback(
     [Output("an-price-chart","figure"), Output("an-score-chart","figure"),
      Output("an-events-table","children"), Output("an-count","children"),
@@ -132,104 +135,152 @@ def update_anomaly(ticker, days, severity):
     empty.update_layout(**PLOT_BASE)
     defaults = (empty, empty, html.Div("No data"), "—", "—", "—")
 
-    # Fetch prices
+    # Fetch prices: GET /prices/{ticker}/history?limit=90
     try:
         rp = requests.get(f"{API_BASE}/prices/{ticker}/history",
-                          params={"days":days}, headers=HEADERS, timeout=6)
-        prices = pd.DataFrame(rp.json())
-        prices["timestamp"] = pd.to_datetime(prices["timestamp"])
-        prices = prices.sort_values("timestamp")
+                          params={"limit": days}, headers=HEADERS, timeout=6)
+        if rp.status_code != 200:
+            return defaults
+        price_data = rp.json()
+        if isinstance(price_data, dict):
+            # Handle response like {"ticker": [list of prices]}
+            price_data = list(price_data.values())[0] if price_data else []
+        prices = pd.DataFrame(price_data)
+        if prices.empty:
+            return defaults
+        prices["date"] = pd.to_datetime(prices["date"])
+        prices = prices.sort_values("date")
     except Exception:
         return defaults
 
-    # Fetch anomalies
-    params = {"days": days}
-    if severity != "all":
-        params["severity"] = severity
+    # Fetch anomalies: GET /anomalies/?ticker=AAPL&days=30
     try:
-        ra = requests.get(f"{API_BASE}/anomalies", params=params,
+        ra = requests.get(f"{API_BASE}/anomalies",
+                          params={"ticker": ticker, "days": days}, 
                           headers=HEADERS, timeout=6)
-        anomalies = pd.DataFrame(ra.json() or [])
-        if not anomalies.empty:
-            anomalies = anomalies[anomalies["ticker"] == ticker] if "ticker" in anomalies.columns else anomalies
-            anomalies["timestamp"] = pd.to_datetime(anomalies["timestamp"])
+        if ra.status_code == 200:
+            anomaly_data = ra.json()
+            anomalies = pd.DataFrame(anomaly_data) if isinstance(anomaly_data, list) else pd.DataFrame()
+        else:
+            anomalies = pd.DataFrame()
     except Exception:
         anomalies = pd.DataFrame()
 
-    # Price chart with markers
+    # Filter by severity if specified
+    if not anomalies.empty and "severity" in anomalies.columns and severity != "all":
+        anomalies = anomalies[anomalies["severity"] == severity]
+
+    # Normalize dates to just date part for consistent merging with prices
+    if not anomalies.empty and "date" in anomalies.columns:
+        anomalies["date"] = pd.to_datetime(anomalies["date"]).dt.strftime('%Y-%m-%d')
+    elif not anomalies.empty and "created_at" in anomalies.columns:
+        anomalies["date"] = pd.to_datetime(anomalies["created_at"]).dt.strftime('%Y-%m-%d')
+    
+    # Also normalize prices dates to YYYY-MM-DD format for matching
+    if not prices.empty and "date" in prices.columns:
+        prices["date"] = pd.to_datetime(prices["date"]).dt.strftime('%Y-%m-%d')
+
+    # Price chart with anomaly markers
     fig_price = go.Figure()
     fig_price.add_trace(go.Scatter(
-        x=prices["timestamp"], y=prices["close"], name="Close",
+        x=prices["date"], y=prices["close"], name="Close",
         line=dict(color=COLORS["blue"], width=1.5), mode="lines",
     ))
-    if not anomalies.empty and "timestamp" in anomalies.columns:
-        merged = anomalies.merge(prices[["timestamp","close"]], on="timestamp", how="left")
-        sev_color = {"high": COLORS["red"], "medium": COLORS["amber"], "low": COLORS["purple"]}
-        for sev, grp in merged.groupby("severity") if "severity" in merged.columns else [("high", merged)]:
-            fig_price.add_trace(go.Scatter(
-                x=grp["timestamp"], y=grp["close"], mode="markers", name=sev.upper(),
-                marker=dict(symbol="x", size=12, color=sev_color.get(sev, COLORS["red"]),
-                            line=dict(width=2)),
-            ))
+    
+    # Add anomaly markers
+    if not anomalies.empty and "date" in anomalies.columns and not prices.empty:
+        # Merge to get prices at anomaly dates (both are YYYY-MM-DD format now)
+        try:
+            merged = anomalies.merge(prices[["date","close"]], on="date", how="left")
+            sev_color = {"high": COLORS["red"], "medium": COLORS["amber"], "low": COLORS["purple"]}
+            
+            if not merged.empty and "severity" in merged.columns:
+                for sev in merged["severity"].unique():
+                    grp = merged[merged["severity"] == sev].dropna(subset=["close"])
+                    if not grp.empty:
+                        fig_price.add_trace(go.Scatter(
+                            x=grp["date"], y=grp["close"], mode="markers", name=sev.upper(),
+                            marker=dict(symbol="x", size=12, color=sev_color.get(sev, COLORS["red"]),
+                                        line=dict(width=2)),
+                        ))
+            elif not merged.empty:
+                grp = merged.dropna(subset=["close"])
+                if not grp.empty:
+                    fig_price.add_trace(go.Scatter(
+                        x=grp["date"], y=grp["close"], mode="markers", name="ANOMALY",
+                        marker=dict(symbol="x", size=12, color=COLORS["red"], line=dict(width=2)),
+                    ))
+        except Exception as e:
+            logger.error(f"Error merging anomalies with prices: {e}")
+    
     fig_price.update_layout(**PLOT_BASE, height=340,
                              title=dict(text=f"<b>{ticker}</b>  ·  Price + Anomaly Events",
                                         font=dict(size=12, color=COLORS["text"])))
 
-    # Score timeline
+    # Anomaly score timeline
     fig_score = go.Figure()
-    if not anomalies.empty and "score" in anomalies.columns:
+    if not anomalies.empty and "anomaly_score" in anomalies.columns:
+        anomalies_sorted = anomalies.sort_values("date")
         fig_score.add_trace(go.Scatter(
-            x=anomalies["timestamp"], y=anomalies["score"], mode="lines+markers",
+            x=anomalies_sorted["date"], y=anomalies_sorted["anomaly_score"],
+            mode="lines+markers",
             line=dict(color=COLORS["red"], width=1.5),
             marker=dict(size=5, color=COLORS["amber"]),
             fill="tozeroy", fillcolor=COLORS["red"]+"22", name="Score",
         ))
+        # Add threshold line
         fig_score.add_hline(y=0.7, line_dash="dot", line_color=COLORS["amber"],
-                             annotation_text="High", annotation_font_color=COLORS["amber"])
-    fig_score.update_layout(**PLOT_BASE, height=200,
+                             annotation_text="Threshold", annotation_position="right")
+    
+    fig_score.update_layout(**PLOT_BASE, height=240,
                              title=dict(text="ANOMALY SCORE  (0–1)",
                                         font=dict(size=11, color=COLORS["muted"])),
                              yaxis_range=[0, 1])
 
     # Events table
     if anomalies.empty:
-        table = html.Div("No anomalies detected", style={"color":COLORS["dim"],
-                                                          "fontFamily":"'IBM Plex Mono',monospace",
-                                                          "fontSize":"11px","padding":"16px"})
+        table = html.Div("No anomalies detected", 
+                        style={"color":COLORS["dim"],
+                               "fontFamily":"'IBM Plex Mono',monospace",
+                               "fontSize":"11px","padding":"16px"})
     else:
         sev_colors = {"high":COLORS["red"],"medium":COLORS["amber"],"low":COLORS["purple"]}
         rows = []
-        for _, row in anomalies.sort_values("timestamp", ascending=False).head(20).iterrows():
-            sev = row.get("severity","low")
+        for _, row in anomalies.sort_values("date", ascending=False).head(20).iterrows():
+            date_str = str(row.get("date", row.get("created_at", "—")))[:16]
+            sev = row.get("severity", "low")
+            score = row.get("anomaly_score", 0)
+            model = row.get("model_used", "—")
+            
             rows.append(html.Tr([
-                html.Td(str(row["timestamp"])[:16],
+                html.Td(date_str,
                         style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
                                "color":COLORS["muted"],"padding":"5px 6px",
                                "borderBottom":f"1px solid {COLORS['border']}22"}),
-                html.Td(row.get("anomaly_type","—"),
+                html.Td(model,
                         style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
                                "color":COLORS["text"],"padding":"5px 6px",
                                "borderBottom":f"1px solid {COLORS['border']}22"}),
                 html.Td(_badge(sev.upper(), sev_colors.get(sev, COLORS["purple"])),
                         style={"padding":"5px 6px","borderBottom":f"1px solid {COLORS['border']}22"}),
-                html.Td(f"{row.get('score',0):.3f}",
+                html.Td(f"{score:.3f}",
                         style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
                                "color":COLORS["amber"],"padding":"5px 6px",
                                "borderBottom":f"1px solid {COLORS['border']}22"}),
             ]))
         table = html.Table(
             [html.Thead(html.Tr([
-                html.Th("TIMESTAMP", style=_th()), html.Th("TYPE", style=_th()),
+                html.Th("TIMESTAMP", style=_th()), html.Th("MODEL", style=_th()),
                 html.Th("SEVERITY", style=_th()), html.Th("SCORE", style=_th()),
             ]))] + [html.Tbody(rows)],
             style={"width":"100%","borderCollapse":"collapse",
                    "fontFamily":"'IBM Plex Mono',monospace"},
         )
 
-    # Stats
-    total  = len(anomalies) if not anomalies.empty else 0
-    highs  = len(anomalies[anomalies["severity"]=="high"]) if not anomalies.empty and "severity" in anomalies.columns else 0
-    avg_sc = f"{anomalies['score'].mean():.3f}" if not anomalies.empty and "score" in anomalies.columns else "—"
+    # Calculate stats
+    total = len(anomalies) if not anomalies.empty else 0
+    highs = len(anomalies[anomalies["severity"]=="high"]) if not anomalies.empty and "severity" in anomalies.columns else 0
+    avg_sc = f"{anomalies['anomaly_score'].mean():.3f}" if not anomalies.empty and "anomaly_score" in anomalies.columns else "—"
 
     return fig_price, fig_score, table, str(total), str(highs), avg_sc
 

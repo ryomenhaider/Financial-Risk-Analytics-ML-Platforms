@@ -1,7 +1,10 @@
 """
 Page 5 — Sentiment Analysis
-FinBERT scores over time, news feed with badges, correlation heatmap.
 """
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import dash, requests
 from dash import dcc, html, Input, Output, callback
 import plotly.graph_objects as go
@@ -26,7 +29,7 @@ def _score_label(score):
 
 def _badge(text, color):
     return html.Span(text, style={
-        "background": color + "22", "color": color,
+        "background": color+"22", "color": color,
         "border": f"1px solid {color}44", "borderRadius": "3px",
         "padding": "1px 7px", "fontFamily": "'IBM Plex Mono',monospace",
         "fontSize": "9px", "letterSpacing": "1px", "fontWeight": "600",
@@ -35,12 +38,13 @@ def _badge(text, color):
 def _empty_fig(msg="No data available"):
     fig = go.Figure()
     fig.add_annotation(text=msg, x=0.5, y=0.5, xref="paper", yref="paper",
-                       showarrow=False, font=dict(color=COLORS["muted"], size=12))
+                       showarrow=False,
+                       font=dict(color=COLORS["muted"], size=12,
+                                 family="'IBM Plex Mono',monospace"))
     fig.update_layout(**PLOT_BASE, height=240)
     return fig
 
 def _safe_fetch(url, params=None):
-    """Returns parsed JSON or None on any error."""
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=6)
         if r.status_code == 200:
@@ -49,15 +53,21 @@ def _safe_fetch(url, params=None):
         pass
     return None
 
-def _find_col(df, candidates):
-    """Return the first matching column name from candidates list."""
-    for c in candidates:
-        if c in df.columns:
-            return c
-    return None
+def _avg_score(rows):
+    """Average sentiment score from a list of sentiment rows."""
+    if not rows:
+        return 0.0
+    scores = []
+    for r in rows:
+        if isinstance(r, dict):
+            v = r.get("score", r.get("sentiment_score"))
+            if v is not None:
+                try:
+                    scores.append(float(v))
+                except (TypeError, ValueError):
+                    pass
+    return sum(scores) / len(scores) if scores else 0.0
 
-
-# ── Helper card ───────────────────────────────────────────────────────────────
 def _kpi_chip(ticker, score):
     col = _score_color(score)
     return html.Div([
@@ -94,15 +104,14 @@ layout = html.Div([
                          value=30, clearable=False,
                          style={"width":"90px","fontFamily":"'IBM Plex Mono',monospace",
                                 "fontSize":"12px","background":COLORS["elevated"],
-                                "border":f"1px solid {COLORS['border']}","marginLeft":"8px"}),
+                                "border":f"1px solid {COLORS['border']}",
+                                "marginLeft":"8px"}),
         ], style={"display":"flex","alignItems":"center"}),
     ], style={"display":"flex","justifyContent":"space-between",
               "alignItems":"flex-start","marginBottom":"24px"}),
 
-    # KPI bar
     html.Div(id="sent-kpi-bar", style={"marginBottom":"20px"}),
 
-    # Timeline + gauge
     html.Div([
         html.Div([
             html.Div("SENTIMENT TIMELINE", style={
@@ -129,7 +138,6 @@ layout = html.Div([
                    "borderRadius":"6px","padding":"16px"}),
     ], style={"display":"flex","gap":"16px","marginBottom":"16px"}),
 
-    # Heatmap + news feed
     html.Div([
         html.Div([
             html.Div("CROSS-ASSET SENTIMENT HEATMAP", style={
@@ -169,55 +177,58 @@ layout = html.Div([
      Input("sent-days",  "value")],
 )
 def update_sentiment(ticker, days):
-    # ── 1. Timeline data ──────────────────────────────────────────────────────
-    timeline_data = _safe_fetch(f"{API_BASE}/sentiment/{ticker}/timeline",
-                                params={"days": days})
-    timeline = pd.DataFrame(timeline_data) if timeline_data else pd.DataFrame()
 
-    ts_col    = _find_col(timeline, ["published_at","date","timestamp"]) if not timeline.empty else None
-    score_col = _find_col(timeline, ["sentiment_score","score"]) if not timeline.empty else None
+    # ── 1. Timeline — GET /sentiment/timeline?ticker=AAPL&days=30 ─────────────
+    # ✅ ticker is a QUERY param, not a path param
+    timeline_data = _safe_fetch(
+        f"{API_BASE}/sentiment/timeline",
+        params={"ticker": ticker, "days": days},   # ✅ correct endpoint
+    )
+    timeline = pd.DataFrame(timeline_data) if isinstance(timeline_data, list) else pd.DataFrame()
 
-    if ts_col and not timeline.empty:
-        timeline[ts_col] = pd.to_datetime(timeline[ts_col], errors="coerce")
-        timeline = timeline.dropna(subset=[ts_col]).sort_values(ts_col)
+    # your API returns: id, ticker, headline, source, published_at, sentiment, score, created_at
+    if not timeline.empty:
+        timeline["published_at"] = pd.to_datetime(timeline["published_at"], errors="coerce")
+        timeline = timeline.dropna(subset=["published_at"]).sort_values("published_at")
 
     # ── 2. Timeline figure ────────────────────────────────────────────────────
-    if timeline.empty or not score_col:
+    if timeline.empty or "score" not in timeline.columns:
         fig_timeline = _empty_fig("No sentiment timeline data")
     else:
-        sc   = timeline[score_col]
+        sc   = timeline["score"].astype(float)
         cols = [COLORS["green"] if v >= 0 else COLORS["red"] for v in sc]
 
         fig_timeline = go.Figure()
         fig_timeline.add_trace(go.Bar(
-            x=timeline[ts_col], y=sc,
+            x=timeline["published_at"], y=sc,
             marker_color=cols, opacity=0.75, name="Sentiment",
         ))
         if len(sc) >= 7:
             fig_timeline.add_trace(go.Scatter(
-                x=timeline[ts_col], y=sc.rolling(7).mean(),
+                x=timeline["published_at"], y=sc.rolling(7).mean(),
                 line=dict(color=COLORS["blue"], width=2, dash="dash"),
                 name="7D Avg", mode="lines",
             ))
         fig_timeline.update_layout(
-            **PLOT_BASE, height=240,
-            yaxis_range=[-1, 1],
+            **PLOT_BASE, height=240, yaxis_range=[-1, 1], hovermode="x unified",
             shapes=[dict(type="line", x0=0, x1=1, xref="paper", y0=0, y1=0,
                          line=dict(color=COLORS["border"], width=1))],
             title=dict(text=f"{ticker}  SENTIMENT  (-1 to +1)",
                        font=dict(size=11, color=COLORS["muted"])),
         )
 
-    # ── 3. Current score ──────────────────────────────────────────────────────
-    current_score = 0.0
-    # Try dedicated endpoint first
-    spot = _safe_fetch(f"{API_BASE}/sentiment/{ticker}")
-    if spot and isinstance(spot, dict):
-        current_score = float(spot.get("score", spot.get("sentiment_score", 0)) or 0)
-    elif not timeline.empty and score_col:
-        current_score = float(timeline[score_col].iloc[-1])
+    # ── 3. Current score — GET /sentiment/{ticker}?days=7 ─────────────────────
+    # ✅ returns a LIST of sentiment rows — take average as current score
+    ticker_data = _safe_fetch(f"{API_BASE}/sentiment/{ticker}",
+                               params={"days": 7})
+    ticker_rows = ticker_data if isinstance(ticker_data, list) else []
+    current_score = _avg_score(ticker_rows)
 
-    # ── 4. Gauge figure ───────────────────────────────────────────────────────
+    # fallback to last timeline row
+    if abs(current_score) < 0.01 and not timeline.empty and "score" in timeline.columns:
+        current_score = float(timeline["score"].iloc[-1])
+
+    # ── 4. Gauge ──────────────────────────────────────────────────────────────
     gauge_color = _score_color(current_score)
     fig_gauge = go.Figure(go.Indicator(
         mode="gauge+number",
@@ -229,9 +240,9 @@ def update_sentiment(ticker, days):
             bgcolor=COLORS["elevated"],
             borderwidth=1, bordercolor=COLORS["border"],
             steps=[
-                dict(range=[-1,  -0.2], color=COLORS["red"]   + "22"),
-                dict(range=[-0.2, 0.2], color=COLORS["amber"] + "22"),
-                dict(range=[ 0.2,   1], color=COLORS["green"] + "22"),
+                dict(range=[-1,   -0.2], color=COLORS["red"]   + "22"),
+                dict(range=[-0.2,  0.2], color=COLORS["amber"] + "22"),
+                dict(range=[ 0.2,    1], color=COLORS["green"] + "22"),
             ],
         ),
         number=dict(font=dict(family="'IBM Plex Mono',monospace",
@@ -245,17 +256,36 @@ def update_sentiment(ticker, days):
         height=220, margin=dict(l=20, r=20, t=30, b=10),
     )
 
-    # ── 5. Heatmap — fetch all tickers ────────────────────────────────────────
+    # ── 5. Heatmap — GET /sentiment/heatmap ──────────────────────────────────
+    # ✅ this endpoint exists in your API
     heatmap_scores = {}
-    for t in TICKERS[:8]:
-        data = _safe_fetch(f"{API_BASE}/sentiment/{t}")
-        if data and isinstance(data, dict):
-            v = data.get("score", data.get("sentiment_score", None))
-            if v is not None:
-                try:
-                    heatmap_scores[t] = float(v)
-                except (TypeError, ValueError):
-                    pass
+    heatmap_data = _safe_fetch(f"{API_BASE}/sentiment/heatmap")
+
+    if isinstance(heatmap_data, dict):
+        # if API returns {"AAPL": 0.3, "MSFT": -0.1, ...}
+        for t, v in heatmap_data.items():
+            try:
+                heatmap_scores[t] = float(v)
+            except (TypeError, ValueError):
+                pass
+    elif isinstance(heatmap_data, list):
+        # if API returns [{"ticker": "AAPL", "score": 0.3}, ...]
+        for row in heatmap_data:
+            if isinstance(row, dict):
+                t = row.get("ticker")
+                v = row.get("score", row.get("sentiment_score"))
+                if t and v is not None:
+                    try:
+                        heatmap_scores[t] = float(v)
+                    except (TypeError, ValueError):
+                        pass
+
+    # fallback — fetch per ticker if heatmap endpoint returned nothing
+    if not heatmap_scores:
+        for t in TICKERS[:8]:
+            rows = _safe_fetch(f"{API_BASE}/sentiment/{t}", params={"days": 7})
+            if isinstance(rows, list) and rows:
+                heatmap_scores[t] = _avg_score(rows)
 
     if heatmap_scores:
         tks  = list(heatmap_scores.keys())
@@ -266,8 +296,7 @@ def update_sentiment(ticker, days):
             zmin=-1, zmax=1, showscale=True,
             colorbar=dict(tickfont=dict(color=COLORS["muted"], size=9),
                           len=0.8, thickness=12,
-                          title=dict(text="Score",
-                                     font=dict(color=COLORS["muted"]))),
+                          title=dict(text="Score", font=dict(color=COLORS["muted"]))),
             text=[[f"{v:.2f}" for v in vals]],
             texttemplate="%{text}",
             textfont=dict(family="'IBM Plex Mono',monospace",
@@ -281,10 +310,10 @@ def update_sentiment(ticker, days):
     else:
         fig_heat = _empty_fig("Sentiment scores unavailable")
 
-    # ── 6. News feed ──────────────────────────────────────────────────────────
-    news_data = _safe_fetch(f"{API_BASE}/sentiment/{ticker}/news",
-                            params={"days": min(days, 7)})
-    news = news_data if isinstance(news_data, list) else []
+    # ── 6. News feed — reuse GET /sentiment/{ticker} data ────────────────────
+    # ✅ no /news endpoint exists — use the ticker rows we already fetched
+    # they contain: headline, source, published_at, sentiment, score
+    news = ticker_rows[:15] if ticker_rows else []
 
     if not news:
         news_div = html.Div(
@@ -294,15 +323,16 @@ def update_sentiment(ticker, days):
         )
     else:
         cards = []
-        for item in news[:15]:
+        for item in news:
             if not isinstance(item, dict):
                 continue
-            sc    = float(item.get("sentiment_score", item.get("score", 0)) or 0)
+            sc    = float(item.get("score", 0) or 0)
             col   = _score_color(sc)
             label = _score_label(sc)
-            title = item.get("headline", item.get("title", "—"))
+            # ✅ your API uses 'headline' not 'title'
+            title = item.get("headline", "—")
             src   = item.get("source", "—")
-            date  = str(item.get("published_at", item.get("date", "")))[:10]
+            date  = str(item.get("published_at", ""))[:10]
 
             cards.append(html.Div([
                 html.Div([
@@ -318,7 +348,6 @@ def update_sentiment(ticker, days):
                     "color":COLORS["dim"]}),
             ], style={"padding":"10px 0",
                        "borderBottom":f"1px solid {COLORS['border']}22"}))
-
         news_div = html.Div(cards)
 
     # ── 7. KPI bar ────────────────────────────────────────────────────────────
