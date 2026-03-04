@@ -1,3 +1,9 @@
+"""
+I am not a Frontend dev, so this was all written by AI (not recommended actually),
+an example of how frustating AI coding can be is that it took 200k tokens to find
+that the dash does not support the HEX colors, in the code that was written by the AI itself, 
+in the frst place    
+"""
 
 import sys
 from pathlib import Path
@@ -8,7 +14,6 @@ from dash import dcc, html, Input, Output
 import os, requests, dash
 from dashboard.theme import COLORS, API_BASE, HEADERS, API_HEALTH  # ← from theme
 
-# ── Shared design tokens (all pages import from here) ─────────────────────
 COLORS = {
     "bg":       "#0A0E17", "card":    "#111827", "elevated": "#1C2333",
     "border":   "#1F2D45", "blue":    "#00D4FF", "green":    "#00FF94",

@@ -9,7 +9,7 @@ from database.connection import get_session
 from database.crud import insert_market_data
 
 TICKERS = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "JPM", "V", "JNJ"]
-PERIOD = "1y"
+PERIOD = "10y"
 INTERVAL = "1d"
 
 def fetch_ticker(symbol: str) -> pd.DataFrame:

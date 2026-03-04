@@ -1,10 +1,10 @@
 from datetime import date
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import text
 
 import sys
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from database.models import (
@@ -118,23 +118,51 @@ def get_forecasts(session: Session, ticker: str, horizon_days: int = 30) -> list
 
 
 def upsert_portfolio_weights(session: Session, rows: list[dict]) -> None:
+    """
+    ✅ FIXED: Delete existing rows for this method first, then insert fresh.
+    Previous bulk_insert_mappings was appending duplicates and get_latest_weights
+    was only returning the last millisecond's rows (one ticker).
+    """
+    if not rows:
+        return
+    method = rows[0].get("method")
+    if method:
+        session.execute(
+            text("DELETE FROM portfolio_weights WHERE method = :method"),
+            {"method": method}
+        )
     session.bulk_insert_mappings(PortfolioWeight, rows)
     session.commit()
 
 
 def get_latest_weights(session: Session) -> list[PortfolioWeight]:
-    latest = (
-        session.query(PortfolioWeight.calculated_at)
-        .order_by(PortfolioWeight.calculated_at.desc())
-        .first()
+    """
+    ✅ FIXED: Get the latest calculated_at per method, then return all
+    rows matching those timestamps. Previously grabbed only the single
+    latest timestamp across all methods — missed every other method's rows
+    since each method saves at a different millisecond.
+    """
+    # Get the most recent calculated_at for each method
+    subquery = (
+        session.query(
+            PortfolioWeight.method,
+            text("MAX(calculated_at) as max_ts")
+        )
+        .group_by(PortfolioWeight.method)
+        .subquery()
     )
-    if not latest:
-        return []
-    return (
+
+    results = (
         session.query(PortfolioWeight)
-        .filter(PortfolioWeight.calculated_at == latest[0])
+        .join(
+            subquery,
+            (PortfolioWeight.method == subquery.c.method) &
+            (PortfolioWeight.calculated_at == subquery.c.max_ts)
+        )
+        .order_by(PortfolioWeight.method, PortfolioWeight.ticker)
         .all()
     )
+    return results
 
 
 def insert_model_run(session: Session, row: dict) -> None:
@@ -166,6 +194,7 @@ def get_features(session: Session, ticker: str, limit: int = 100) -> list[Featur
         .all()
     )
 
+
 if __name__ == "__main__":
     from database.connection import get_session
 
@@ -173,12 +202,6 @@ if __name__ == "__main__":
         insert_crypto_prices(session, [
             {"symbol": "BTC", "date": date(2024, 1, 1), "close": 42000.0}
         ])
-
         results = get_latest_crypto(session, symbol='BTC', limit=5)
-
         for row in results:
-            print(f'''
-                  COIN: {row.symbol}
-                  DATE:  {row.date} 
-                  CLOSE: {row.close}''')
-
+            print(f"COIN: {row.symbol} DATE: {row.date} CLOSE: {row.close}")

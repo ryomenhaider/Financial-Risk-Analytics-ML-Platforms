@@ -1,4 +1,3 @@
-
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -7,8 +6,7 @@ import dash, requests
 from dash import dcc, html, Input, Output, callback, State
 import plotly.graph_objects as go
 import pandas as pd
-from datetime import datetime, timedelta
-from dashboard.theme import COLORS, PLOT_BASE, API_BASE, HEADERS  # ✅ safe
+from dashboard.theme import COLORS, PLOT_BASE, API_BASE, HEADERS
 dash.register_page(__name__, path="/forecasts", name="Forecasting Center", order=2)
 
 TICKERS  = ["AAPL","MSFT","GOOGL","TSLA","NVDA","BTC-USD","ETH-USD","SPY"]
@@ -26,7 +24,6 @@ def _metric_card(label, val_id, accent):
                "padding":"14px 20px","flex":"1","minWidth":"110px"})
 
 
-
 layout = html.Div([
     html.Div(
         "⚠  MODEL PREDICTIONS ONLY — NOT INVESTMENT ADVICE",
@@ -35,7 +32,6 @@ layout = html.Div([
                "border":f"1px solid {COLORS['amber']}33","borderRadius":"4px",
                "padding":"8px 16px","marginBottom":"20px","textAlign":"center"},
     ),
-
     html.Div([
         html.Div([
             html.Span("FORECASTING CENTER", style={"fontFamily":"'IBM Plex Mono',monospace",
@@ -59,7 +55,6 @@ layout = html.Div([
     ], style={"display":"flex","justifyContent":"space-between","alignItems":"flex-start",
               "marginBottom":"24px"}),
 
-    # Metric cards
     html.Div([
         _metric_card("YHAT",       "fc-latest", COLORS["blue"]),
         _metric_card("YHAT_UPPER", "fc-upper",  COLORS["green"]),
@@ -68,28 +63,29 @@ layout = html.Div([
         _metric_card("HORIZON",    "fc-horiz",  COLORS["muted"]),
     ], style={"display":"flex","gap":"12px","marginBottom":"20px","flexWrap":"wrap"}),
 
-    # Main forecast chart
     dcc.Loading(type="circle", color=COLORS["blue"], children=[
         dcc.Graph(id="fc-main-chart", config={"displayModeBar":False},
                   style={"borderRadius":"6px","border":f"1px solid {COLORS['border']}",
                          "marginBottom":"20px"}),
     ]),
 
-    # Comparison section
     html.Div([
         html.Div("FORECAST COMPARISON", style={"fontFamily":"'IBM Plex Mono',monospace",
                                                  "fontSize":"10px","letterSpacing":"2px",
                                                  "color":COLORS["dim"],"marginBottom":"12px"}),
         html.Div([
-            dcc.Input(id="fc-compare-tickers", type="text", placeholder="Enter tickers (e.g., AAPL,MSFT,GOOGL)",
+            dcc.Input(id="fc-compare-tickers", type="text",
+                      placeholder="Enter tickers (e.g., AAPL,MSFT,GOOGL)",
                       style={"flex":"1","padding":"8px 12px","fontFamily":"'IBM Plex Mono',monospace",
                              "fontSize":"12px","background":COLORS["elevated"],
                              "border":f"1px solid {COLORS['border']}","borderRadius":"4px",
                              "color":COLORS["text"]}),
             html.Button("COMPARE", id="fc-compare-btn", n_clicks=0,
-                       style={"marginLeft":"8px","padding":"8px 16px","fontFamily":"'IBM Plex Mono',monospace",
-                              "fontSize":"10px","fontWeight":"600","background":COLORS["blue"],
-                              "color":COLORS["bg"],"border":"none","borderRadius":"4px","cursor":"pointer"}),
+                       style={"marginLeft":"8px","padding":"8px 16px",
+                              "fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
+                              "fontWeight":"600","background":COLORS["blue"],
+                              "color":COLORS["bg"],"border":"none","borderRadius":"4px",
+                              "cursor":"pointer"}),
         ], style={"display":"flex","gap":"8px","marginBottom":"16px"}),
         dcc.Loading(type="dot", color=COLORS["blue"], children=[
             dcc.Graph(id="fc-compare-chart", config={"displayModeBar":False},
@@ -98,7 +94,6 @@ layout = html.Div([
     ], style={"background":COLORS["card"],"border":f"1px solid {COLORS['border']}",
               "borderRadius":"6px","padding":"16px","marginBottom":"20px"}),
 
-    # Forecast table
     html.Div([
         html.Div("FORECAST TABLE (NEXT 10 DAYS)",
                  style={"fontFamily":"'IBM Plex Mono',monospace","fontSize":"10px",
@@ -111,6 +106,17 @@ layout = html.Div([
 ])
 
 
+def _dedupe_forecasts(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    DB stores multiple runs per forecast_date. Keep the most recent
+    predicted_at per forecast_date so we get exactly one row per day.
+    """
+    if "predicted_at" in df.columns:
+        df["predicted_at"] = pd.to_datetime(df["predicted_at"], utc=True)
+        df = (df.sort_values("predicted_at", ascending=False)
+                .drop_duplicates(subset=["forecast_date"], keep="first"))
+    return df.sort_values("forecast_date").reset_index(drop=True)
+
 
 @callback(
     [Output("fc-main-chart","figure"), Output("fc-table","children"),
@@ -118,6 +124,7 @@ layout = html.Div([
      Output("fc-lower","children"), Output("fc-model","children"),
      Output("fc-horiz","children")],
     [Input("fc-ticker","value"), Input("fc-horizon","value")],
+    prevent_initial_call=False,
 )
 def update_forecast(ticker, horizon):
     empty = go.Figure()
@@ -125,97 +132,88 @@ def update_forecast(ticker, horizon):
     defaults = (empty, html.Div("No data"), "—","—","—","—","—")
 
     try:
-        # Fetch forecasts from endpoint: GET /forecasts/{ticker}?horizon=30
         r = requests.get(f"{API_BASE}/forecasts/{ticker}",
                          params={"horizon": horizon}, headers=HEADERS, timeout=8)
         if r.status_code != 200:
             return defaults
         payload = r.json()
-    except Exception as e:
+    except Exception:
         return defaults
 
-    # payload should be list[ForecastResponse]
     if not isinstance(payload, list) or not payload:
         return defaults
 
     fc = pd.DataFrame(payload)
-    
-    # Ensure forecast_date is datetime
-    fc["forecast_date"] = pd.to_datetime(fc["forecast_date"])
-    fc = fc.sort_values("forecast_date").reset_index(drop=True)
+    fc["forecast_date"] = pd.to_datetime(fc["forecast_date"], utc=True).dt.tz_localize(None)
 
-    # Fetch historical prices for context
+    # ✅ FIX: deduplicate — keep only latest predicted_at per forecast_date
+    fc = _dedupe_forecasts(fc)
+
+    # Fetch historical prices
     try:
         rh = requests.get(f"{API_BASE}/prices/{ticker}/history",
                           params={"limit": 90}, headers=HEADERS, timeout=6)
-        if rh.status_code == 200:
-            hist = pd.DataFrame(rh.json())
-            hist["date"] = pd.to_datetime(hist["date"])
+        hist = pd.DataFrame(rh.json()) if rh.status_code == 200 else pd.DataFrame()
+        if not hist.empty:
+            hist["date"] = pd.to_datetime(hist["date"], utc=True).dt.tz_localize(None)
             hist = hist.sort_values("date")
-        else:
-            hist = pd.DataFrame()
     except Exception:
         hist = pd.DataFrame()
-    # Build main chart
+
     fig = go.Figure()
-    
-    # Add historical prices
+
     if not hist.empty and "close" in hist.columns:
         fig.add_trace(go.Scatter(
             x=hist["date"], y=hist["close"], name="Historical",
             line=dict(color=COLORS["blue"], width=2), mode="lines",
         ))
-    
-    # Add confidence band
+
     if "yhat_upper" in fc.columns and "yhat_lower" in fc.columns:
         fig.add_trace(go.Scatter(
             x=list(fc["forecast_date"]) + list(fc["forecast_date"])[::-1],
             y=list(fc["yhat_upper"]) + list(fc["yhat_lower"])[::-1],
-            fill="toself", fillcolor=COLORS["green"]+"18",
-            line=dict(color="rgba(0,0,0,0)"), name="95% Confidence Band", 
+            fill="toself", fillcolor="rgba(0, 255, 148, 0.09)",
+            line=dict(color="rgba(0,0,0,0)"), name="95% Confidence Band",
             showlegend=True, hoverinfo="skip",
         ))
-    
-    # Add forecast line
+
     if "yhat" in fc.columns:
         fig.add_trace(go.Scatter(
             x=fc["forecast_date"], y=fc["yhat"], name="Forecast",
             line=dict(color=COLORS["green"], width=2, dash="dash"), mode="lines+markers",
         ))
-    
+
     fig.update_layout(**PLOT_BASE, height=400,
                        title=dict(text=f"<b>{ticker}</b>  ·  {horizon}-Day Forecast",
                                   font=dict(size=12, color=COLORS["text"])))
 
-    # Build forecast table
+    # Table — first 10 future dates
     rows = []
     for _, row in fc.head(10).iterrows():
         date_str = str(row["forecast_date"])[:10]
-        yhat = f"${row.get('yhat', 0):.2f}" if pd.notna(row.get('yhat')) else "—"
-        upper = f"${row.get('yhat_upper', 0):.2f}" if pd.notna(row.get('yhat_upper')) else "—"
-        lower = f"${row.get('yhat_lower', 0):.2f}" if pd.notna(row.get('yhat_lower')) else "—"
-        
+        yhat  = f"${row.get('yhat', 0):.2f}"   if pd.notna(row.get("yhat"))       else "—"
+        upper = f"${row.get('yhat_upper', 0):.2f}" if pd.notna(row.get("yhat_upper")) else "—"
+        lower = f"${row.get('yhat_lower', 0):.2f}" if pd.notna(row.get("yhat_lower")) else "—"
         rows.append(html.Tr([
             html.Td(date_str, style=_td(COLORS["muted"])),
-            html.Td(yhat, style=_td(COLORS["green"])),
-            html.Td(lower, style=_td(COLORS["dim"])),
-            html.Td(upper, style=_td(COLORS["dim"])),
+            html.Td(yhat,     style=_td(COLORS["green"])),
+            html.Td(lower,    style=_td(COLORS["dim"])),
+            html.Td(upper,    style=_td(COLORS["dim"])),
         ]))
-    
+
     table = html.Table(
         [html.Thead(html.Tr([
             html.Th("DATE", style=_th()), html.Th("FORECAST", style=_th()),
-            html.Th("LOWER BOUND", style=_th()),  html.Th("UPPER BOUND", style=_th()),
+            html.Th("LOWER BOUND", style=_th()), html.Th("UPPER BOUND", style=_th()),
         ]))] + [html.Tbody(rows)],
         style={"width":"100%","borderCollapse":"collapse","fontFamily":"'IBM Plex Mono',monospace"},
     )
 
-    # Extract latest forecast values for metric cards
-    latest = fc.iloc[-1] if not fc.empty else {}
-    yhat_val = f"${latest.get('yhat', 0):.2f}" if pd.notna(latest.get('yhat')) else "—"
-    upper_val = f"${latest.get('yhat_upper', 0):.2f}" if pd.notna(latest.get('yhat_upper')) else "—"
-    lower_val = f"${latest.get('yhat_lower', 0):.2f}" if pd.notna(latest.get('yhat_lower')) else "—"
-    model = latest.get("model_used", "Prophet")[:15] if pd.notna(latest.get("model_used")) else "—"
+    latest    = fc.iloc[-1]
+    yhat_val  = f"${latest.get('yhat', 0):.2f}"       if pd.notna(latest.get("yhat"))       else "—"
+    upper_val = f"${latest.get('yhat_upper', 0):.2f}" if pd.notna(latest.get("yhat_upper")) else "—"
+    lower_val = f"${latest.get('yhat_lower', 0):.2f}" if pd.notna(latest.get("yhat_lower")) else "—"
+    model     = str(latest.get("model_used", "Prophet"))[:15]
 
     return fig, table, yhat_val, upper_val, lower_val, model, f"{horizon}D"
 
@@ -227,47 +225,36 @@ def update_forecast(ticker, horizon):
     prevent_initial_call=True,
 )
 def update_compare(n_clicks, horizon, tickers_str):
+    empty = go.Figure()
+    empty.update_layout(**PLOT_BASE)
     if not tickers_str or not tickers_str.strip():
-        empty = go.Figure()
-        empty.update_layout(**PLOT_BASE)
         return empty
 
     try:
-        # Use compare endpoint: GET /forecasts/compare?tickers=AAPL,MSFT&horizon=30
         tickers = ",".join([t.strip().upper() for t in tickers_str.split(",")])
         r = requests.get(f"{API_BASE}/forecasts/compare",
-                         params={"tickers": tickers, "horizon": horizon}, 
+                         params={"tickers": tickers, "horizon": horizon},
                          headers=HEADERS, timeout=10)
         if r.status_code != 200:
-            empty = go.Figure()
-            empty.update_layout(**PLOT_BASE)
             return empty
-        
         payload = r.json()
     except Exception:
-        empty = go.Figure()
-        empty.update_layout(**PLOT_BASE)
+        return empty
+
+    if not isinstance(payload, dict):
         return empty
 
     fig = go.Figure()
-    
-    # payload should be dict with ticker keys
-    if not isinstance(payload, dict):
-        empty = go.Figure()
-        empty.update_layout(**PLOT_BASE)
-        return empty
+    colors_list = [COLORS["blue"], COLORS["green"], COLORS["amber"],
+                   COLORS["red"], COLORS["purple"]]
 
-    colors_list = [COLORS["blue"], COLORS["green"], COLORS["amber"], COLORS["red"], COLORS["purple"]]
-    
     for idx, (ticker, data) in enumerate(payload.items()):
         if not isinstance(data, list):
             data = [data]
-        
         df = pd.DataFrame(data)
         if "forecast_date" in df.columns and "yhat" in df.columns:
-            df["forecast_date"] = pd.to_datetime(df["forecast_date"])
-            df = df.sort_values("forecast_date")
-            
+            df["forecast_date"] = pd.to_datetime(df["forecast_date"], utc=True).dt.tz_localize(None)
+            df = _dedupe_forecasts(df)
             color = colors_list[idx % len(colors_list)]
             fig.add_trace(go.Scatter(
                 x=df["forecast_date"], y=df["yhat"], name=ticker,
@@ -275,10 +262,10 @@ def update_compare(n_clicks, horizon, tickers_str):
             ))
 
     fig.update_layout(**PLOT_BASE, height=350, hovermode="x unified",
-                       title=dict(text="FORECAST COMPARISON", 
+                       title=dict(text="FORECAST COMPARISON",
                                   font=dict(size=11, color=COLORS["muted"])))
-    
     return fig
+
 
 def _th():
     return {"fontSize":"9px","color":COLORS["dim"],"letterSpacing":"1.5px",

@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import os
 
-API_BASE   = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_BASE = os.getenv("API_BASE", "http://localhost:8000")
 API_HEALTH = "http://localhost:8000/health"
 HEADERS    = {"X-API-Key": os.getenv("DASHBOARD_API_KEY", "changeme")}
 
