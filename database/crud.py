@@ -132,11 +132,6 @@ def get_forecasts(session: Session, ticker: str, horizon_days: int = 30) -> list
 
 
 def upsert_portfolio_weights(session: Session, rows: list[dict]) -> None:
-    """
-    ✅ FIXED: Delete existing rows for this method first, then insert fresh.
-    Previous bulk_insert_mappings was appending duplicates and get_latest_weights
-    was only returning the last millisecond's rows (one ticker).
-    """
     if not rows:
         return
     method = rows[0].get("method")
@@ -150,33 +145,30 @@ def upsert_portfolio_weights(session: Session, rows: list[dict]) -> None:
 
 
 def get_latest_weights(session: Session) -> list[PortfolioWeight]:
-    """
-    ✅ FIXED: Get the latest calculated_at per method, then return all
-    rows matching those timestamps. Previously grabbed only the single
-    latest timestamp across all methods — missed every other method's rows
-    since each method saves at a different millisecond.
-    """
-    # Get the most recent calculated_at for each method
-    subquery = (
-        session.query(
-            PortfolioWeight.method,
-            text("MAX(calculated_at) as max_ts")
-        )
-        .group_by(PortfolioWeight.method)
-        .subquery()
-    )
-
-    results = (
-        session.query(PortfolioWeight)
-        .join(
-            subquery,
-            (PortfolioWeight.method == subquery.c.method) &
-            (PortfolioWeight.calculated_at == subquery.c.max_ts)
-        )
-        .order_by(PortfolioWeight.method, PortfolioWeight.ticker)
-        .all()
-    )
-    return results
+    from sqlalchemy import text
+    
+    result = session.execute(text("""
+        SELECT DISTINCT ON (method, ticker) 
+            id, ticker, weight, method, calculated_at, created_at
+        FROM portfolio_weights
+        ORDER BY method, ticker, calculated_at DESC
+    """))
+    
+    rows = result.mappings().all()
+    
+    # Convert to PortfolioWeight objects
+    weights = []
+    for row in rows:
+        w = PortfolioWeight()
+        w.id = row["id"]
+        w.ticker = row["ticker"]
+        w.weight = row["weight"]
+        w.method = row["method"]
+        w.calculated_at = row["calculated_at"]
+        w.created_at = row["created_at"]
+        weights.append(w)
+    
+    return weights
 
 
 def insert_model_run(session: Session, row: dict) -> None:
