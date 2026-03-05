@@ -110,7 +110,6 @@ layout = html.Div([
      Output("sent-news-feed","children"),
      Output("sent-kpi-bar","children")],
     [Input("sent-ticker","value"), Input("sent-days","value")],
-    prevent_initial_call=False,
 )
 def update_sentiment(ticker, days):
     empty = go.Figure()
@@ -130,10 +129,8 @@ def update_sentiment(ticker, days):
     except Exception:
         return defaults
 
-    # Parse dates and convert numeric columns
+    # Parse dates
     df["published_at"] = pd.to_datetime(df["published_at"], utc=True).dt.tz_localize(None)
-    if "score" in df.columns:
-        df["score"] = pd.to_numeric(df["score"], errors="coerce")
     df = df.sort_values("published_at")
 
     # ── Timeline ─────────────────────────────────────────────────────────────
@@ -161,8 +158,8 @@ def update_sentiment(ticker, days):
         **PLOT_BASE, height=260,
         title=dict(text=f"<b>{ticker}</b>  ·  Sentiment Scores",
                    font=dict(size=12, color=COLORS["text"])),
-        yaxis=dict(**PLOT_BASE["yaxis"], range=[-1.1, 1.1]),
     )
+    fig_timeline.update_yaxes(range=[-1.1, 1.1])
     fig_timeline.add_hline(y=0, line_dash="dot",
                             line_color=COLORS["border"], line_width=1)
 
@@ -184,9 +181,9 @@ def update_sentiment(ticker, days):
             "bgcolor": COLORS["elevated"],
             "bordercolor": COLORS["border"],
             "steps": [
-                {"range":[-1, -0.1], "color": "rgba(255, 77, 109, 0.13)"},
-                {"range":[-0.1, 0.1],"color": "rgba(139, 154, 179, 0.13)"},
-                {"range":[0.1, 1],   "color": "rgba(0, 255, 148, 0.13)"},
+                {"range":[-1, -0.1], "color": COLORS["red"]+"22"},
+                {"range":[-0.1, 0.1],"color": COLORS["muted"]+"22"},
+                {"range":[0.1, 1],   "color": COLORS["green"]+"22"},
             ],
             "threshold": {"line":{"color":COLORS["amber"],"width":2},
                           "thickness":0.75,"value": avg_score},
@@ -194,6 +191,7 @@ def update_sentiment(ticker, days):
     ))
     fig_gauge.update_layout(
         paper_bgcolor=COLORS["card"],
+        plot_bgcolor=COLORS["card"],
         font=dict(color=COLORS["text"], family="'IBM Plex Mono',monospace"),
         margin=dict(l=30, r=30, t=30, b=20),
         height=230,
@@ -226,8 +224,8 @@ def update_sentiment(ticker, days):
             **PLOT_BASE, height=200,
             title=dict(text="AVG SENTIMENT BY TICKER",
                        font=dict(size=11, color=COLORS["muted"])),
-            yaxis=dict(**PLOT_BASE["yaxis"], range=[-1.1, 1.1]),
         )
+        fig_heatmap.update_yaxes(range=[-1.1, 1.1])
         fig_heatmap.add_hline(y=0, line_dash="dot",
                                line_color=COLORS["border"], line_width=1)
     else:
@@ -294,3 +292,5 @@ def update_sentiment(ticker, days):
     ]
 
     return fig_timeline, fig_gauge, fig_heatmap, news_feed, kpi_bar
+
+print("Sentiment analysis page loaded")

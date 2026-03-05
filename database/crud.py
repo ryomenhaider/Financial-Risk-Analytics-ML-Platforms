@@ -73,13 +73,27 @@ def insert_sentiment(session: Session, rows: list[dict]) -> None:
 
 
 def get_sentiment(session: Session, ticker: str, limit: int = 50) -> list[NewsSentiment]:
-    return (
-        session.query(NewsSentiment)
-        .filter(NewsSentiment.ticker == ticker)
-        .order_by(NewsSentiment.published_at.desc())
-        .limit(limit)
-        .all()
-    )
+    from datetime import datetime, timedelta
+    
+    # If limit <= 90, treat it as days; otherwise as row limit
+    if limit <= 90:
+        cutoff_date = datetime.utcnow() - timedelta(days=limit)
+        return (
+            session.query(NewsSentiment)
+            .filter(NewsSentiment.ticker == ticker)
+            .filter(NewsSentiment.published_at >= cutoff_date)
+            .order_by(NewsSentiment.published_at.desc())
+            .all()
+        )
+    else:
+        # For limits > 90, treat as actual row limit
+        return (
+            session.query(NewsSentiment)
+            .filter(NewsSentiment.ticker == ticker)
+            .order_by(NewsSentiment.published_at.desc())
+            .limit(limit)
+            .all()
+        )
 
 def insert_anomaly(session: Session, rows: list[dict]) -> None:
     session.bulk_insert_mappings(Anomaly, rows)
