@@ -9,6 +9,7 @@ python_version: "3.11"
 app_file: dashboard/app.py
 pinned: false
 ---
+# Financial Intelligence Platform
 
 > **Enterprise-grade financial intelligence system with AI-powered analytics, real-time data ingestion, anomaly detection, and predictive forecasting.**
 
