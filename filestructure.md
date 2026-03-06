@@ -33,7 +33,7 @@ financial-intelligence-platform/
 │   ├── dag_prices.py             ✅ done
 │   ├── dag_macro.py              ✅ done
 │   ├── dag_news.py               ✅ done
-│   └── dag_retrain.py            ⏳ later
+│   └── dag_retrain.py            ✅ done
 │
 ├── ml/
 │   ├── anomaly_detector.py       ✅ done
@@ -41,35 +41,35 @@ financial-intelligence-platform/
 │   ├── portfolio_optimizer.py    ✅ done
 │   ├── sentiment_engine.py       ✅ done
 │   ├── feature_store.py          ✅ done
-│   ├── model_registry.py         ⬅️ I are here
-│   └── train_pipeline.py         ⏳ later
+│   ├── model_registry.py         ✅ done
+│   └── train_pipeline.py         ✅ done
 │
 ├── api/
-│   ├── main.py                   ⏳ later
-│   ├── schemas.py                ⏳ later
+│   ├── main.py                   ✅ done
+│   ├── schemas.py                ✅ done
 │   └── routers/
-│       ├── prices.py             ⏳ later
-│       ├── anomalies.py          ⏳ later
-│       ├── forecasts.py          ⏳ later
-│       ├── portfolio.py          ⏳ later
-│       └── sentiment.py          ⏳ later
+│       ├── prices.py             ✅ done
+│       ├── anomalies.py          ✅ done
+│       ├── forecasts.py          ✅ done
+│       ├── portfolio.py          ✅ done
+│       └── sentiment.py          ✅ done
 │
 ├── dashboard/
-│   ├── app.py                    ⏳ later
+│   ├── app.py                    ✅ done
 │   └── pages/
-│       ├── overview.py           ⏳ later
-│       ├── anomalies.py          ⏳ later
-│       ├── forecasts.py          ⏳ later
-│       ├── portfolio.py          ⏳ later
-│       └── sentiment.py          ⏳ later
+│       ├── overview.py           ✅ done
+│       ├── anomalies.py          ✅ done
+│       ├── forecasts.py          ✅ done
+│       ├── portfolio.py          ✅ done
+│       └── sentiment.py          ✅ done
 │
 ├── mlops/
-│   └── drift_detector.py         ⏳ later
+│   └── drift_detector.py         ✅ done
 │
 ├── deploy/
-│   ├── Dockerfile                ⏳ later
-│   ├── nginx.conf                ⏳ later
-│   └── aws_setup.sh              ⏳ later
+│   ├── Dockerfile                ✅ done
+│   ├── nginx.conf                ✅ done
+│   └── aws_setup.sh              ✅ done
 │
 ├── tests/
 │   ├── test_crud.py              ⏳ later

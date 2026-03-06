@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-"""
-Initialize database schema and load seed data
-"""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -11,33 +7,29 @@ from config.settings import DB_URL
 from sqlalchemy import text, create_engine
 
 def init_database():
-    """Create tables from schema.sql"""
     print("Initializing database schema...")
     
-    # Read schema
     schema_file = Path(__file__).parent / "database" / "schema.sql"
     if not schema_file.exists():
-        print(f"❌ Schema file not found: {schema_file}")
+        print(f"Schema file not found: {schema_file}")
         return False
     
     with open(schema_file, 'r') as f:
         schema_sql = f.read()
     
-    # Connect and execute
     try:
         engine = create_engine(DB_URL)
         with engine.connect() as conn:
-            # Execute each statement separately (PostgreSQL doesn't support multiple statements in one execute)
             for statement in schema_sql.split(';'):
                 statement = statement.strip()
                 if statement:
                     print(f"Executing: {statement[:80]}...")
                     conn.execute(text(statement))
             conn.commit()
-        print("✅ Schema created successfully")
+        print("Schema created successfully")
         return True
     except Exception as e:
-        print(f"❌ Error creating schema: {e}")
+        print(f"Error creating schema: {e}")
         return False
 
 def load_seed_data():
@@ -47,31 +39,28 @@ def load_seed_data():
     # Read seed data
     seed_file = Path(__file__).parent / "database" / "seed_data.sql"
     if not seed_file.exists():
-        print(f"❌ Seed data file not found: {seed_file}")
+        print(f"Seed data file not found: {seed_file}")
         return False
     
     with open(seed_file, 'r') as f:
         seed_sql = f.read()
     
-    # Connect and execute
     try:
         engine = create_engine(DB_URL)
         with engine.connect() as conn:
-            # Execute each statement separately
             for statement in seed_sql.split(';'):
                 statement = statement.strip()
-                if statement and not statement.startswith('--'):  # Skip comments
+                if statement and not statement.startswith('--'):  
                     print(f"Executing: {statement[:80]}...")
                     conn.execute(text(statement))
             conn.commit()
-        print("✅ Seed data loaded successfully")
+        print("Seed data loaded successfully")
         return True
     except Exception as e:
-        print(f"❌ Error loading seed data: {e}")
+        print(f"Error loading seed data: {e}")
         return False
 
 def verify_data():
-    """Verify data was loaded"""
     print("\nVerifying data...")
     try:
         from database.connection import get_session
@@ -89,13 +78,13 @@ def verify_data():
             print(f"Forecast rows: {forecast_count}")
             
             if market_count > 0:
-                print("✅ Data verification successful!")
+                print("Data verification successful!")
                 return True
             else:
-                print("⚠️  No data found - check seed_data.sql is being executed correctly")
+                print("No data found - check seed_data.sql is being executed correctly")
                 return False
     except Exception as e:
-        print(f"❌ Error verifying data: {e}")
+        print(f"Error verifying data: {e}")
         return False
 
 if __name__ == "__main__":
@@ -107,8 +96,8 @@ if __name__ == "__main__":
     if success:
         verify_data()
         print("\n" + "=" * 60)
-        print("✅ Database initialization complete!")
+        print("Database initialization complete!")
         print("You can now start the API and dashboard")
     else:
         print("\n" + "=" * 60)
-        print("❌ Database initialization failed!")
+        print("Database initialization failed!")
