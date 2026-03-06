@@ -167,8 +167,8 @@ Perfect for financial analysts, portfolio managers, quantitative researchers, an
 
 #### 1. Clone Repository
 ```bash
-git clone https://github.com/yourusername/financial-intelligence-platform.git
-cd financial-intelligence-platform
+git clone https://github.com/ryomenhaider/Financial-Risk-Analytics-ML-Platforms.git
+cd Financial-Risk-Analytics-ML-Platforms
 ```
 
 #### 2. Configure Environment
