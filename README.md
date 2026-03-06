@@ -1,4 +1,14 @@
-# 📊 Financial Intelligence Platform
+---
+title: Financial Intelligence Platform
+emoji: 📊
+colorFrom: blue
+colorTo: purple
+sdk: docker
+sdk_version: "latest"
+python_version: "3.11"
+app_file: dashboard/app.py
+pinned: false
+---
 
 > **Enterprise-grade financial intelligence system with AI-powered analytics, real-time data ingestion, anomaly detection, and predictive forecasting.**
 
