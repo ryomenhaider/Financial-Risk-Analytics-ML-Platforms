@@ -222,8 +222,6 @@ API Docs:   http://<PUBLIC_IP>/docs
 Airflow:    http://<PUBLIC_IP>:8080
 ```
 
-For detailed deployment guide, see [DEPLOYMENT.md](DEPLOYMENT.md).
-
 ---
 
 ## 📁 Project Structure
@@ -551,11 +549,6 @@ docker system prune -a
 
 ## 🚀 Production Deployment
 
-### Local Deployment
-See [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md) for quick reference.
-
-### AWS EC2 Deployment
-See [DEPLOYMENT.md](DEPLOYMENT.md) for comprehensive guide.
 
 ### Key Production Considerations
 
@@ -816,51 +809,6 @@ git push origin feature/your-feature
 
 ---
 
-## 📄 License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) file for details.
-
----
-
-## 📞 Support & Contact
-
-### Getting Help
-
-- **Documentation:** See [DEPLOYMENT.md](DEPLOYMENT.md), [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)
-- **Issues:** Report bugs on GitHub Issues
-- **Discussions:** Ask questions in GitHub Discussions
-- **Email:** support@example.com
-
-### Community
-
-- GitHub: [financial-intelligence-platform](https://github.com/yourusername/financial-intelligence-platform)
-- Discord: [Community Server](https://discord.gg/your-link)
-- Twitter: [@YourHandle](https://twitter.com/YourHandle)
-
----
-
-## 🗺️ Roadmap
-
-### Version 1.1 (Q2 2026)
-- [ ] Advanced risk metrics (VaR, Sharpe Ratio)
-- [ ] Real-time alert system
-- [ ] Mobile app (React Native)
-- [ ] Advanced portfolio optimization
-
-### Version 1.2 (Q3 2026)
-- [ ] Multi-language support
-- [ ] Custom indicators library
-- [ ] Social sentiment integration
-- [ ] API rate limiting
-
-### Version 2.0 (Q4 2026)
-- [ ] Distributed training for ML models
-- [ ] GraphQL API
-- [ ] Real-time WebSocket support
-- [ ] Advanced backtesting engine
-
----
-
 ## 📊 Performance Metrics
 
 ### Typical Performance (t3.medium EC2)
@@ -919,7 +867,7 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) file for 
 
 ---
 
-**Made with ❤️ by the Financial Intelligence Team**
+**Made with ❤️ by the Haider Ali**
 
 **Last Updated:** March 6, 2026  
 **Version:** 1.0  
