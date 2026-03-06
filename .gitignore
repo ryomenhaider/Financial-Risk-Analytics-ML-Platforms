@@ -1,3 +1,11 @@
+mlartifacts/
+*.pkl
+*.joblib
+*.pt
+*.onnx
+
+
+
 __pycache__/
 *.py[cod]
 *.pyo
