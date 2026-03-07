@@ -24,12 +24,21 @@ dependencies = [
     "requests-ratelimiter>=0.9.1",
     "scikit-learn>=1.8.0",
     "sqlalchemy>=2.0.47",
-    "tensor>=0.3.6",
-    "tensorflow==2.14.0",
     "torch>=2.10.0",
     "transformers>=5.2.0",
     "xgboost>=3.2.0",
     "yfinance>=1.2.0",
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu" }
+]
+
 [tool.uv]
-environments = ["sys_platform == 'linux'"]
+index-strategy = "unsafe-best-match"
