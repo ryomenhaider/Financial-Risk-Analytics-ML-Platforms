@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import date, datetime
 from typing import Optional
 
@@ -43,7 +43,7 @@ class ForecastResponse(BaseModel):
     model_used: Optional[str]
     horizon_days: Optional[int]
     created_at: datetime
-
+    model_config = ConfigDict(protected_namespaces=())
     model_config = {"from_attributes": True}
 
 
