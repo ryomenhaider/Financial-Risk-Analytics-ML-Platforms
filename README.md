@@ -4,6 +4,7 @@ emoji: 📊
 colorFrom: blue
 colorTo: purple
 sdk: docker
+app_port: 7860
 sdk_version: "latest"
 python_version: "3.11"
 app_file: dashboard/app.py

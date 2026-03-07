@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -9,9 +10,17 @@ from config.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-MLFLOW_URI = "http://localhost:5000"
-mlflow.set_tracking_uri(MLFLOW_URI)
-client = MlflowClient(MLFLOW_URI)
+MLFLOW_TRACKING_URI      = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+MLFLOW_TRACKING_USERNAME = os.getenv("MLFLOW_TRACKING_USERNAME", "")
+MLFLOW_TRACKING_PASSWORD = os.getenv("MLFLOW_TRACKING_PASSWORD", "")
+
+os.environ["MLFLOW_TRACKING_USERNAME"] = MLFLOW_TRACKING_USERNAME
+os.environ["MLFLOW_TRACKING_PASSWORD"] = MLFLOW_TRACKING_PASSWORD
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+client = MlflowClient(MLFLOW_TRACKING_URI)
+
+logger.info(f"MLflow tracking URI: {MLFLOW_TRACKING_URI}")
 
 
 def save_model(model, model_name: str, ticker: str,
@@ -23,23 +32,23 @@ def save_model(model, model_name: str, ticker: str,
 
     # start a new run — like opening a new git commit
     with mlflow.start_run(run_name=f"{model_name}_{ticker}") as run:
-        
+
         # save a tag so we can search by ticker later
         mlflow.set_tag("ticker", ticker)
-        
+
         # save hyperparameters — n_estimators, learning_rate etc
         mlflow.log_params(params)
-        
+
         # save performance metrics — MAE, RMSE etc
         mlflow.log_metrics(metrics)
-        
+
         # save the actual model file
         mlflow.sklearn.log_model(
             sk_model=model,
             artifact_path=model_name,
             registered_model_name=f"{model_name}_{ticker}"
         )
-        
+
         logger.info(f"Saved {model_name} for {ticker} — run_id: {run.info.run_id}")
         return run.info.run_id
 
@@ -57,25 +66,26 @@ def load_best_model(model_name: str, ticker: str):
     model = mlflow.sklearn.load_model(f"runs:/{best_run_id}/{model_name}")
     return model
 
+
 def list_models(model_name: str) -> None:
-    
     versions = client.search_model_versions(f"name LIKE '{model_name}%'")
-    
+
     if not versions:
         print(f"No models found for {model_name}")
         return
-    
+
     for v in versions:
         print(f"Model: {v.name} | Version: {v.version} | Stage: {v.current_stage}")
 
+
 def promote_to_production(model_name: str, version: str) -> None:
     client.transition_model_version_stage(
-        name=model_name, 
-        version=version, 
+        name=model_name,
+        version=version,
         stage="Production"
     )
-    
     logger.info(f'{model_name} has been promoted to Production')
+
 
 if __name__ == "__main__":
     from sklearn.ensemble import IsolationForest
@@ -93,7 +103,7 @@ if __name__ == "__main__":
         ticker='AAPL',
         metrics={
             'mae': 32.5,
-            'detection_rate': 0.052   
+            'detection_rate': 0.052
         },
         params={
             'n_estimators': 100,
