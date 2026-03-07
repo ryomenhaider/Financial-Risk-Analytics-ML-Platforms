@@ -9,6 +9,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+
+# Install torch from PyTorch CPU index first (avoids OOM from GPU build)
+RUN pip install --user --no-cache-dir \
+    torch==2.10.0 \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# Install everything else from PyPI
 RUN pip install --user --no-cache-dir -r requirements.txt
 
 FROM python:3.11-slim
