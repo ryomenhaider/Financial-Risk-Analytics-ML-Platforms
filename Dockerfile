@@ -20,12 +20,7 @@ RUN pip install --user --no-cache-dir -r requirements.txt
 
 # Pre-download FinBERT at build time (internet available here)
 ENV HF_HOME=/build/hf_cache
-RUN python -c "
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-AutoTokenizer.from_pretrained('ProsusAI/finbert')
-AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert')
-print('FinBERT downloaded successfully')
-"
+RUN python -c " from transformers import AutoTokenizer, AutoModelForSequenceClassification; AutoTokenizer.from_pretrained('ProsusAI/finbert'); AutoModelForSequenceClassification.from_pretrained('ProsusAI/finbert'); print('FinBERT downloaded successfully') "
 
 FROM python:3.11-slim
 
