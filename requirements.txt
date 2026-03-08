@@ -28,7 +28,7 @@ statsmodels==0.14.2
 transformers==4.40.0
 
 # Dashboard
-dash==2.17.0
+dash==3.0.4
 plotly==5.22.0
 
 # Utils
