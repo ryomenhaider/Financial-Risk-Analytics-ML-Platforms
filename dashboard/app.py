@@ -62,11 +62,11 @@ app.title = "FIP — Financial Intelligence Platform"
 server = app.server
 
 _NAV = [
-    ("📈", "MARKET",    "/dashboard/"),
-    ("🔍", "ANOMALY",   "/dashboard/anomalies"),
-    ("🧠", "FORECAST",  "/dashboard/forecasts"),
-    ("⚖️", "PORTFOLIO", "/dashboard/portfolio"),
-    ("💬", "SENTIMENT", "/dashboard/sentiment"),
+    ("📈", "MARKET",    "/"),
+    ("🔍", "ANOMALY",   "/anomalies"),
+    ("🧠", "FORECAST",  "/forecasts"),
+    ("⚖️", "PORTFOLIO", "/portfolio"),
+    ("💬", "SENTIMENT", "/sentiment"),
 ]
 
 def _nl(icon, label, href):
