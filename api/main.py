@@ -77,6 +77,5 @@ app.include_router(sentiment_router, prefix="/api/sentiment", tags=["Sentiment"]
 
 from dashboard.app import server as dash_server
 
-app.mount("/dashboard", WSGIMiddleware(dash_server))
 
 app.mount("/", WSGIMiddleware(dash_server))
