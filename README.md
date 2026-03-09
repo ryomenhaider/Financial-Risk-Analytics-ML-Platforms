@@ -108,7 +108,7 @@ Perfect for financial analysts, portfolio managers, quantitative researchers, an
                     │                     │
               ┌─────▼────┐          ┌────▼──────┐
               │ FastAPI  │          │   Dash    │
-              │ API:8000 │          │ UI:8050   │
+              │ API:7860 │          │ UI:8050   │
               │(4 workers)          │ (1 worker)│
               └─────┬────┘          └────┬──────┘
                     │                    │
@@ -456,7 +456,7 @@ POSTGRES_DB=finDB
 
 # API
 API_HOST=0.0.0.0
-API_PORT=8000
+API_PORT=7860
 
 # Airflow
 AIRFLOW__CORE__LOAD_EXAMPLES=false
@@ -739,7 +739,7 @@ docker-compose logs db
 docker-compose logs fastapi
 
 # Test API endpoint
-curl http://localhost:8000/health
+curl http://localhost:7860/health
 
 # Check API configuration
 docker-compose exec fastapi env | grep DATABASE

@@ -10,7 +10,7 @@ import requests
 import json
 from pprint import pprint
 
-API_BASE = "http://localhost:8000"
+API_BASE = "http://localhost:7860"
 HEADERS = {"X-API-Key": "changeme"}
 
 def test_health():

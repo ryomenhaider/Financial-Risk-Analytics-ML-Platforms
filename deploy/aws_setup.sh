@@ -219,7 +219,7 @@ POSTGRES_DB=finDB
 
 # API Configuration
 API_HOST=0.0.0.0
-API_PORT=8000
+API_PORT=7860
 
 # Airflow Configuration
 AIRFLOW__CORE__LOAD_EXAMPLES=false
