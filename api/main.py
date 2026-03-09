@@ -8,7 +8,6 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.wsgi import WSGIMiddleware
-from fastapi.responses import RedirectResponse
 import uvicorn
 from config.logging_config import get_logger
 from api.routers.prices import router as prices_router
@@ -19,16 +18,13 @@ from api.routers.sentiment import router as sentiment_router
 
 logger = get_logger(__name__)
 
-DASH_URL_BASE = os.getenv("DASH_URL_BASE_PATHNAME", "/dashboard/")
-
 app = FastAPI(
     title="Financial Intelligence Platform",
-    description=('''
-        A production-grade system that ingests real-time and historical financial data,
-        detects anomalies, forecasts price movements, and visualises everything in a 
-        Bloomberg-style dashboard.
-            '''
-                 ),
+    description=(
+        "A production-grade system that ingests real-time and historical financial data, "
+        "detects anomalies, forecasts price movements, and visualises everything in a "
+        "Bloomberg-style dashboard."
+    ),
     version="0.1.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -62,10 +58,7 @@ async def startup():
     except Exception as e:
         logger.error(f"Startup error: {e}")
 
-@app.get("/")
-async def root():
-    return RedirectResponse(url=DASH_URL_BASE)
-
+# ── API routes ────────────────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
     from database.connection import test_connection
@@ -83,7 +76,7 @@ app.include_router(portfolio_router, prefix="/api/portfolio", tags=["Portfolio"]
 app.include_router(sentiment_router, prefix="/api/sentiment", tags=["Sentiment"])
 
 from dashboard.app import server as dash_server
+
 app.mount("/dashboard", WSGIMiddleware(dash_server))
 
-if __name__ == "__main__":
-    uvicorn.run("api.main:app", host="0.0.0.0", port=7860, reload=True)
+app.mount("/", WSGIMiddleware(dash_server))
