@@ -10,10 +10,12 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import os
+import requests
+import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output
-import os, requests, dash
-from dashboard.theme import COLORS, API_BASE, HEADERS, API_HEALTH
+from dashboard.theme import COLORS, HEADERS, API_HEALTH
 
 COLORS = {
     "bg":       "#0A0E17", "card":    "#111827", "elevated": "#1C2333",
@@ -36,12 +38,12 @@ PLOT_BASE = dict(
                     font=dict(color=COLORS["text"], family="'IBM Plex Mono',monospace")),
 )
 
-# KEY FIX: Set url_base_pathname so Dash knows it lives under /dashboard/
-# assets_external_path is not needed — Dash will serve assets under /dashboard/assets/
+DASH_URL_BASE = os.getenv("DASH_URL_BASE_PATHNAME", "/dashboard/")
+
 app = dash.Dash(
     __name__,
     use_pages=True,
-    url_base_pathname="/dashboard/",          # ← all Dash routes prefixed here
+    url_base_pathname=DASH_URL_BASE,
     external_stylesheets=[
         dbc.themes.DARKLY,
         "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600"
@@ -52,7 +54,6 @@ app = dash.Dash(
 )
 app.title = "FIP — Financial Intelligence Platform"
 
-# `server` is the underlying Flask app — imported by FastAPI's WSGIMiddleware
 server = app.server
 
 _NAV = [
@@ -67,37 +68,51 @@ def _nl(icon, label, href):
     return dcc.Link(
         html.Div([
             html.Span(icon, style={"marginRight": "6px", "fontSize": "13px"}),
-            html.Span(label, style={"fontFamily": "'IBM Plex Mono',monospace",
-                                    "fontWeight": "500", "fontSize": "10px", "letterSpacing": "2px"}),
-        ], style={"display": "flex", "alignItems": "center", "padding": "6px 14px",
-                  "borderRadius": "4px", "color": COLORS["muted"]}),
+            html.Span(label, style={
+                "fontFamily": "'IBM Plex Mono',monospace",
+                "fontWeight": "500", "fontSize": "10px", "letterSpacing": "2px",
+            }),
+        ], style={
+            "display": "flex", "alignItems": "center",
+            "padding": "6px 14px", "borderRadius": "4px", "color": COLORS["muted"],
+        }),
         href=href, style={"textDecoration": "none"},
     )
 
 navbar = html.Div([
     html.Div([
-        html.Span("FIP", style={"fontFamily": "'IBM Plex Mono',monospace", "fontWeight": "600",
-                                 "fontSize": "17px", "color": COLORS["blue"], "letterSpacing": "5px"}),
-        html.Div("FINANCIAL INTELLIGENCE PLATFORM",
-                 style={"fontFamily": "'IBM Plex Mono',monospace", "fontSize": "8px",
-                        "color": COLORS["dim"], "letterSpacing": "2.5px", "marginTop": "2px"}),
+        html.Span("FIP", style={
+            "fontFamily": "'IBM Plex Mono',monospace", "fontWeight": "600",
+            "fontSize": "17px", "color": COLORS["blue"], "letterSpacing": "5px",
+        }),
+        html.Div("FINANCIAL INTELLIGENCE PLATFORM", style={
+            "fontFamily": "'IBM Plex Mono',monospace", "fontSize": "8px",
+            "color": COLORS["dim"], "letterSpacing": "2.5px", "marginTop": "2px",
+        }),
     ], style={"padding": "0 28px"}),
-    html.Div([_nl(i, l, h) for i, l, h in _NAV],
-             style={"display": "flex", "gap": "2px", "alignItems": "center"}),
+    html.Div(
+        [_nl(i, l, h) for i, l, h in _NAV],
+        style={"display": "flex", "gap": "2px", "alignItems": "center"},
+    ),
     html.Div([
         html.Div(id="nav-status"),
         dcc.Interval(id="status-tick", interval=30_000, n_intervals=0),
     ], style={"padding": "0 28px", "display": "flex", "alignItems": "center"}),
-], style={"display": "flex", "justifyContent": "space-between", "alignItems": "center",
-          "height": "58px", "background": COLORS["card"],
-          "borderBottom": f"1px solid {COLORS['border']}",
-          "position": "sticky", "top": "0", "zIndex": "1000"})
+], style={
+    "display": "flex", "justifyContent": "space-between", "alignItems": "center",
+    "height": "58px", "background": COLORS["card"],
+    "borderBottom": f"1px solid {COLORS['border']}",
+    "position": "sticky", "top": "0", "zIndex": "1000",
+})
 
 app.layout = html.Div([
     navbar,
-    html.Div(dash.page_container,
-             style={"minHeight": "calc(100vh - 58px)", "background": COLORS["bg"], "padding": "28px"}),
+    html.Div(
+        dash.page_container,
+        style={"minHeight": "calc(100vh - 58px)", "background": COLORS["bg"], "padding": "28px"},
+    ),
 ], style={"background": COLORS["bg"], "minHeight": "100vh", "fontFamily": "'IBM Plex Sans',sans-serif"})
+
 
 @app.callback(Output("nav-status", "children"), Input("status-tick", "n_intervals"))
 def _ping(_):
@@ -110,8 +125,10 @@ def _ping(_):
         dot, label, color = "●", "OFFLINE", COLORS["red"]
     return html.Span([
         html.Span(dot, style={"color": color, "marginRight": "6px", "fontSize": "9px"}),
-        html.Span(label, style={"fontFamily": "'IBM Plex Mono',monospace", "fontSize": "10px",
-                                 "color": color, "letterSpacing": "2px"}),
+        html.Span(label, style={
+            "fontFamily": "'IBM Plex Mono',monospace", "fontSize": "10px",
+            "color": color, "letterSpacing": "2px",
+        }),
     ], style={"display": "flex", "alignItems": "center"})
 
-# No run_server() block — Dash is served via WSGIMiddleware, never run standalone in production.
+# No run_server() — production entry point is uvicorn via WSGIMiddleware
