@@ -18,10 +18,12 @@ logger = get_logger(__name__)
 
 app = FastAPI(
     title="Financial Intelligence Platform",
-    description="A production-grade system that ingests real-time and historical financial data, detects anomalies, forecasts price movements, and visualizes everything in a Bloomberg-style dashboard.",
+    description="A production-grade system that ingests real-time and historical financial data, "
+                "detects anomalies, forecasts price movements, and visualises everything in a "
+                "Bloomberg-style dashboard.",
     version="0.1.0",
     docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    redoc_url="/api/redoc",
 )
 
 app.add_middleware(
@@ -59,7 +61,7 @@ async def health():
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "connected" if db_ok else "unreachable",
-        "version": app.version
+        "version": app.version,
     }
 
 app.include_router(prices_router,    prefix="/api/prices",    tags=["Prices"])
@@ -68,9 +70,11 @@ app.include_router(forecasts_router, prefix="/api/forecasts", tags=["Forecasts"]
 app.include_router(portfolio_router, prefix="/api/portfolio", tags=["Portfolio"])
 app.include_router(sentiment_router, prefix="/api/sentiment", tags=["Sentiment"])
 
-# Mount Dash at root — must be last
+# KEY FIX: Mount Dash at /dashboard — must come AFTER all FastAPI routes.
+# WSGIMiddleware bridges Starlette (ASGI) → Flask (WSGI).
+# Dash's url_base_pathname="/dashboard/" must match this mount path exactly.
 from dashboard.app import server as dash_server
-app.mount("/", WSGIMiddleware(dash_server))
+app.mount("/dashboard", WSGIMiddleware(dash_server))
 
 if __name__ == "__main__":
     uvicorn.run("api.main:app", host="0.0.0.0", port=7860, reload=True)
