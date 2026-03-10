@@ -1,15 +1,9 @@
-"""
-I am not a Frontend dev, so this was all written by AI (not recommended actually),
-an example of how frustating AI coding can be is that it took 200k tokens to find
-that the dash does not support the HEX colors, in the code that was written by the AI itself, 
-in the frst place    
-"""
-
 # dashboard/app.py
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import os
 import requests
 import dash
 import dash_bootstrap_components as dbc
@@ -24,31 +18,26 @@ COLORS = {
 }
 
 PLOT_BASE = dict(
-
     paper_bgcolor=COLORS["card"], plot_bgcolor=COLORS["bg"],
-
     font=dict(color=COLORS["text"], family="'IBM Plex Mono',monospace", size=11),
-
     xaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
                tickfont=dict(color=COLORS["muted"], size=10), zerolinecolor=COLORS["border"]),
-
     yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
                tickfont=dict(color=COLORS["muted"], size=10), zerolinecolor=COLORS["border"]),
-
     margin=dict(l=55, r=20, t=40, b=45),
-
     legend=dict(bgcolor=COLORS["elevated"], bordercolor=COLORS["border"],
                 font=dict(color=COLORS["muted"])),
-
     hoverlabel=dict(bgcolor=COLORS["elevated"], bordercolor=COLORS["blue"],
                     font=dict(color=COLORS["text"], family="'IBM Plex Mono',monospace")),
 )
 
+# /dashboard/ must match the FastAPI mount point and the ENV var in Dockerfile
+DASH_URL_BASE = os.getenv("DASH_URL_BASE_PATHNAME", "/dashboard/")
 
 app = dash.Dash(
     __name__,
     use_pages=True,
-    url_base_pathname="/",
+    url_base_pathname=DASH_URL_BASE,
     external_stylesheets=[
         dbc.themes.DARKLY,
         "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600"
@@ -56,17 +45,18 @@ app = dash.Dash(
     ],
     suppress_callback_exceptions=True,
     meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
-)   
+)
 app.title = "FIP — Financial Intelligence Platform"
 
+# Exposed to FastAPI WSGIMiddleware
 server = app.server
 
 _NAV = [
-    ("📈", "MARKET",    "/"),
-    ("🔍", "ANOMALY",   "/anomalies"),
-    ("🧠", "FORECAST",  "/forecasts"),
-    ("⚖️", "PORTFOLIO", "/portfolio"),
-    ("💬", "SENTIMENT", "/sentiment"),
+    ("📈", "MARKET",    "/dashboard/"),
+    ("🔍", "ANOMALY",   "/dashboard/anomalies"),
+    ("🧠", "FORECAST",  "/dashboard/forecasts"),
+    ("⚖️", "PORTFOLIO", "/dashboard/portfolio"),
+    ("💬", "SENTIMENT", "/dashboard/sentiment"),
 ]
 
 def _nl(icon, label, href):
@@ -136,4 +126,4 @@ def _ping(_):
         }),
     ], style={"display": "flex", "alignItems": "center"})
 
-# No run_server() — production entry point is uvicorn via WSGIMiddleware
+# No run_server() — served exclusively via WSGIMiddleware in production

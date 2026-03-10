@@ -1,4 +1,3 @@
-# api/main.py
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -8,6 +7,7 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.wsgi import WSGIMiddleware
+from fastapi.responses import HTMLResponse
 import uvicorn
 from config.logging_config import get_logger
 from api.routers.prices import router as prices_router
@@ -58,7 +58,20 @@ async def startup():
     except Exception as e:
         logger.error(f"Startup error: {e}")
 
-# ── API routes ────────────────────────────────────────────────────────────────
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def root():
+    return HTMLResponse(content="""<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta http-equiv="refresh" content="0; url=/dashboard/" />
+    <title>FIP — Redirecting…</title>
+  </head>
+  <body style="background:#0A0E17;color:#E8EDF5;font-family:monospace;padding:40px;">
+    <p>Redirecting to <a href="/dashboard/" style="color:#00D4FF;">dashboard</a>…</p>
+  </body>
+</html>""")
+
 @app.get("/api/health")
 async def health():
     from database.connection import test_connection
@@ -76,6 +89,7 @@ app.include_router(portfolio_router, prefix="/api/portfolio", tags=["Portfolio"]
 app.include_router(sentiment_router, prefix="/api/sentiment", tags=["Sentiment"])
 
 from dashboard.app import server as dash_server
+app.mount("/dashboard", WSGIMiddleware(dash_server))
 
-
-app.mount("/", WSGIMiddleware(dash_server))
+if __name__ == "__main__":
+    uvicorn.run("api.main:app", host="0.0.0.0", port=7860, reload=True)
