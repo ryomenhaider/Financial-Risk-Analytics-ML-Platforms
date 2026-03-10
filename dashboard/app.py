@@ -112,4 +112,3 @@ def _ping(_):
         }),
     ], style={"display": "flex", "alignItems": "center"})
 
-# No run_server() — served exclusively via WSGIMiddleware in production
