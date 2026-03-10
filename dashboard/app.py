@@ -18,9 +18,10 @@ DASH_URL_BASE = os.getenv("DASH_URL_BASE_PATHNAME", "/dashboard/")
 app = dash.Dash(
     __name__,
     use_pages=True,
-    # FIX: both must match — previously url_base_pathname was "/" which caused
-    # asset 404s and broken callbacks when mounted at /dashboard/
-    url_base_pathname=DASH_URL_BASE,
+    # FIX: cannot supply url_base_pathname AND requests_pathname_prefix together —
+    # Dash raises InvalidConfig. Use routes_pathname_prefix + requests_pathname_prefix
+    # explicitly instead. Both must match the FastAPI mount point /dashboard/
+    routes_pathname_prefix=DASH_URL_BASE,
     requests_pathname_prefix=DASH_URL_BASE,
     external_stylesheets=[
         dbc.themes.DARKLY,
