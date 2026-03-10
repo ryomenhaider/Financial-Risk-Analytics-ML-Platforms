@@ -1,4 +1,3 @@
-
 from sqlalchemy import Column, Date, Text, Numeric, BigInteger, Integer, text
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.dialects.postgresql import JSONB

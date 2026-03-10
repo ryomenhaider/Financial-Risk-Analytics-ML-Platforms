@@ -8,25 +8,27 @@ from config.logging_config import get_logger
 from database.crud import get_anomalies as fetch_anomalies, get_latest_anomaly as fetch_latest_anomaly
 from api.schemas import AnomalyResponse
 from database.connection import get_session
-import ml.anomaly_detector as anomaly
 
 logger = get_logger(__name__)
 router = APIRouter()
 
-# GET /anomalies/latest
+# FIX: /latest and /detect/{ticker} declared before implicit path params
+# to avoid route shadowing
+
 @router.get("/latest", response_model=AnomalyResponse)
 async def get_latest_anomaly_endpoint():
     with get_session() as session:
         try:
             row = fetch_latest_anomaly(session)
             if not row:
-                raise HTTPException(status_code=404, detail=f'No Latest Anomaly')
+                raise HTTPException(status_code=404, detail="No latest anomaly found")
             return row
         except HTTPException:
-            raise  
+            raise
         except Exception as e:
             logger.error(f'Error: {e}')
-            raise HTTPException(status_code=500, detail="Internal server error") 
+            raise HTTPException(status_code=500, detail="Internal server error")
+
 
 # GET /anomalies?ticker=AAPL&days=30
 @router.get("/", response_model=List[AnomalyResponse])
@@ -38,12 +40,13 @@ async def get_anomalies(ticker: str, days: int = 30):
                 return []
             return rows
         except HTTPException:
-            raise  
+            raise
         except Exception as e:
             logger.error(f'Error: {e}')
-            raise HTTPException(status_code=500, detail="Internal server error") 
+            raise HTTPException(status_code=500, detail="Internal server error")
 
-# POST /anomalies/detect trigger on-demand detection
+
+# POST /anomalies/detect/{ticker} — trigger on-demand detection
 @router.post("/detect/{ticker}")
 async def detect_anomalies(ticker: str):
     try:

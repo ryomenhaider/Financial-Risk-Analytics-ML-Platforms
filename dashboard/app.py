@@ -8,37 +8,20 @@ import requests
 import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output
-from dashboard.theme import COLORS, HEADERS, API_HEALTH
 
-COLORS = {
-    "bg":       "#0A0E17", "card":    "#111827", "elevated": "#1C2333",
-    "border":   "#1F2D45", "blue":    "#00D4FF", "green":    "#00FF94",
-    "red":      "#FF4D6D", "amber":   "#FFB800", "purple":   "#A855F7",
-    "text":     "#E8EDF5", "muted":   "#8B9AB3", "dim":      "#4A5568",
-}
+# FIX: import everything from theme — do NOT redefine COLORS or PLOT_BASE here
+from dashboard.theme import COLORS, PLOT_BASE, API_HEALTH, HEADERS
 
-PLOT_BASE = dict(
-    paper_bgcolor=COLORS["card"], plot_bgcolor=COLORS["bg"],
-    font=dict(color=COLORS["text"], family="'IBM Plex Mono',monospace", size=11),
-    xaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
-               tickfont=dict(color=COLORS["muted"], size=10), zerolinecolor=COLORS["border"]),
-    yaxis=dict(gridcolor=COLORS["border"], linecolor=COLORS["border"],
-               tickfont=dict(color=COLORS["muted"], size=10), zerolinecolor=COLORS["border"]),
-    margin=dict(l=55, r=20, t=40, b=45),
-    legend=dict(bgcolor=COLORS["elevated"], bordercolor=COLORS["border"],
-                font=dict(color=COLORS["muted"])),
-    hoverlabel=dict(bgcolor=COLORS["elevated"], bordercolor=COLORS["blue"],
-                    font=dict(color=COLORS["text"], family="'IBM Plex Mono',monospace")),
-)
-
-# /dashboard/ must match the FastAPI mount point and the ENV var in Dockerfile
+# /dashboard/ must match the FastAPI mount point
 DASH_URL_BASE = os.getenv("DASH_URL_BASE_PATHNAME", "/dashboard/")
 
 app = dash.Dash(
     __name__,
     use_pages=True,
-    url_base_pathname='/',
-    requests_pathname_prefix="/dashboard/",
+    # FIX: both must match — previously url_base_pathname was "/" which caused
+    # asset 404s and broken callbacks when mounted at /dashboard/
+    url_base_pathname=DASH_URL_BASE,
+    requests_pathname_prefix=DASH_URL_BASE,
     external_stylesheets=[
         dbc.themes.DARKLY,
         "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600"
@@ -114,6 +97,7 @@ app.layout = html.Div([
 def _ping(_):
     dot, label, color = "●", "LIVE", COLORS["green"]
     try:
+        # FIX: API_HEALTH is now correctly set to /api/health in theme.py
         r = requests.get(API_HEALTH, timeout=2, headers=HEADERS)
         if r.status_code != 200:
             dot, label, color = "●", "DEGRADED", COLORS["amber"]

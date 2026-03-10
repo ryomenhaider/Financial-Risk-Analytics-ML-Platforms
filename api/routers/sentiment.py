@@ -12,6 +12,7 @@ from database.connection import get_session
 logger = get_logger(__name__)
 router = APIRouter()
 
+# FIX: /heatmap and /timeline declared BEFORE /{ticker} to prevent route shadowing
 
 @router.get("/heatmap", response_model=dict)
 async def get_sentiment_heatmap():
@@ -26,14 +27,14 @@ async def get_sentiment_heatmap():
                 if rows:
                     row = rows[0]
                     heatmap[ticker] = {
-                        "id": row.id,
-                        "ticker": row.ticker,
-                        "headline": row.headline,
-                        "source": row.source,
+                        "id":           row.id,
+                        "ticker":       row.ticker,
+                        "headline":     row.headline,
+                        "source":       row.source,
                         "published_at": row.published_at.isoformat() if row.published_at else None,
-                        "sentiment": row.sentiment,
-                        "score": float(row.score) if row.score else None,
-                        "created_at": row.created_at.isoformat() if row.created_at else None,
+                        "sentiment":    row.sentiment,
+                        "score":        float(row.score) if row.score else None,
+                        "created_at":   row.created_at.isoformat() if row.created_at else None,
                     }
             if not heatmap:
                 raise HTTPException(status_code=404, detail="No sentiment data found")

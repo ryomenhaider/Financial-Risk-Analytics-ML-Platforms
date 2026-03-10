@@ -72,22 +72,28 @@ async def root():
   </body>
 </html>""")
 
+# FIX: route is /api/health (was missing /api/ prefix in theme.py's API_HEALTH)
 @app.get("/api/health")
 async def health():
-    from database.connection import test_connection
-    db_ok = test_connection()
+    try:
+        from database.connection import test_connection
+        db_ok = test_connection()
+    except Exception:
+        db_ok = False
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "connected" if db_ok else "unreachable",
         "version": app.version,
     }
 
+# FIX: Register routers BEFORE mounting Dash to avoid route shadowing
 app.include_router(prices_router,    prefix="/api/prices",    tags=["Prices"])
 app.include_router(anomalies_router, prefix="/api/anomalies", tags=["Anomalies"])
 app.include_router(forecasts_router, prefix="/api/forecasts", tags=["Forecasts"])
 app.include_router(portfolio_router, prefix="/api/portfolio", tags=["Portfolio"])
 app.include_router(sentiment_router, prefix="/api/sentiment", tags=["Sentiment"])
 
+# Mount Dash LAST — WSGIMiddleware catches everything under /dashboard/
 from dashboard.app import server as dash_server
 app.mount("/dashboard", WSGIMiddleware(dash_server))
 

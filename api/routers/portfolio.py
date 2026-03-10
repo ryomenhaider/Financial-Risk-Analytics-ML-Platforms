@@ -3,7 +3,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from fastapi import APIRouter, HTTPException
-from typing import List
 from config.logging_config import get_logger
 from database.crud import get_latest_weights
 from api.schemas import PortfolioWeightResponse
@@ -18,15 +17,16 @@ async def get_weights():
         try:
             row = get_latest_weights(session)
             if not row:
-                raise HTTPException(status_code=404, detail=f'No Weights Found')
+                raise HTTPException(status_code=404, detail='No weights found')
             return row
         except HTTPException:
-            raise  
+            raise
         except Exception as e:
             logger.error(f'Error: {e}')
-            raise HTTPException(status_code=500, detail="Internal server error") 
+            raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get('/optimize' )
+
+@router.get('/optimize')
 async def optimize():
     try:
         import ml.portfolio_optimizer as Optimizer
@@ -37,6 +37,7 @@ async def optimize():
     except Exception as e:
         logger.error(f'Error: {e}')
         raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @router.get('/backtest')
 async def backtest():

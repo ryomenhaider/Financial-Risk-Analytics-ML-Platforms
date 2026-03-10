@@ -5,49 +5,52 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from fastapi import APIRouter, HTTPException
 from typing import List
 from config.logging_config import get_logger
-from database.crud import get_forecasts as fetch_forcast
+from database.crud import get_forecasts as fetch_forecast
 from api.schemas import ForecastResponse
 from database.connection import get_session
 
 logger = get_logger(__name__)
 router = APIRouter()
 
+# FIX: /compare and /accuracy must be declared BEFORE /{ticker}
+# otherwise FastAPI matches "compare"/"accuracy" as ticker values
 
 @router.get('/compare')
-async def compare_forecast(tickers:str, horizon: int = 30):
+async def compare_forecast(tickers: str, horizon: int = 30):
     with get_session() as session:
         try:
+            ticker_list = [t.strip() for t in tickers.split(',') if t.strip()]
+            if not ticker_list:
+                raise HTTPException(status_code=400, detail='Provide at least one ticker')
             rows = {}
-            tickers = tickers.split(',')
-            if not tickers:
-                raise HTTPException(status_code=404, detail='Say Something!')
-            for ticker in tickers:
-                row = fetch_forcast(session, ticker, horizon_days=horizon)
+            for ticker in ticker_list:
+                row = fetch_forecast(session, ticker, horizon_days=horizon)
                 if not row:
-                    raise HTTPException(status_code=404, detail=f"{ticker} Not found")
+                    raise HTTPException(status_code=404, detail=f"{ticker} not found")
                 rows[ticker] = row[0]
             return rows
         except HTTPException:
-            raise  
+            raise
         except Exception as e:
             logger.error(f'Error: {e}')
-            raise HTTPException(status_code=500, detail="Internal server error")  
+            raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get('/accuracy')
 async def forecast_accuracy():
     return {"message": "coming soon"}
 
-@router.get("/{ticker}", response_model=list[ForecastResponse])
-async def get_forcast(ticker:str, horizon: int = 30 ):
+
+@router.get("/{ticker}", response_model=List[ForecastResponse])
+async def get_forecast(ticker: str, horizon: int = 30):
     with get_session() as session:
         try:
-            row = fetch_forcast(session, ticker, horizon_days=horizon)
+            row = fetch_forecast(session, ticker, horizon_days=horizon)
             if not row:
-                raise HTTPException(status_code=404, detail=f'No forcast for {ticker}')
+                raise HTTPException(status_code=404, detail=f'No forecast for {ticker}')
             return row
         except HTTPException:
-            raise  
+            raise
         except Exception as e:
             logger.error(f'Error: {e}')
-            raise HTTPException(status_code=500, detail="Internal server error") 
+            raise HTTPException(status_code=500, detail="Internal server error")
