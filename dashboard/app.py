@@ -9,18 +9,13 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output
 
-# FIX: import everything from theme — do NOT redefine COLORS or PLOT_BASE here
 from dashboard.theme import COLORS, PLOT_BASE, API_HEALTH, HEADERS
 
-# /dashboard/ must match the FastAPI mount point
 DASH_URL_BASE = os.getenv("DASH_URL_BASE_PATHNAME", "/dashboard/")
 
 app = dash.Dash(
     __name__,
     use_pages=True,
-    # FIX: cannot supply url_base_pathname AND requests_pathname_prefix together —
-    # Dash raises InvalidConfig. Use routes_pathname_prefix + requests_pathname_prefix
-    # explicitly instead. Both must match the FastAPI mount point /dashboard/
     routes_pathname_prefix=DASH_URL_BASE,
     requests_pathname_prefix=DASH_URL_BASE,
     external_stylesheets=[
@@ -33,7 +28,6 @@ app = dash.Dash(
 )
 app.title = "FIP — Financial Intelligence Platform"
 
-# Exposed to FastAPI WSGIMiddleware
 server = app.server
 
 _NAV = [
@@ -98,7 +92,6 @@ app.layout = html.Div([
 def _ping(_):
     dot, label, color = "●", "LIVE", COLORS["green"]
     try:
-        # FIX: API_HEALTH is now correctly set to /api/health in theme.py
         r = requests.get(API_HEALTH, timeout=2, headers=HEADERS)
         if r.status_code != 200:
             dot, label, color = "●", "DEGRADED", COLORS["amber"]
