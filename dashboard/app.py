@@ -37,7 +37,8 @@ DASH_URL_BASE = os.getenv("DASH_URL_BASE_PATHNAME", "/dashboard/")
 app = dash.Dash(
     __name__,
     use_pages=True,
-    url_base_pathname=DASH_URL_BASE,
+    url_base_pathname='/',
+    requests_pathname_prefix="/dashboard/",
     external_stylesheets=[
         dbc.themes.DARKLY,
         "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600"
