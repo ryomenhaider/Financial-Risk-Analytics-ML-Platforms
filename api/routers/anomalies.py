@@ -38,7 +38,7 @@ async def get_anomalies(ticker: str, days: int = 30):
             rows = fetch_anomalies(session, ticker, limit=days)
             if not rows:
                 return []
-            return rows
+            return rows 
         except HTTPException:
             raise
         except Exception as e:
