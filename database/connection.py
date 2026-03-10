@@ -27,7 +27,7 @@ Session_local=sessionmaker(
 def get_session() -> Session:
     return Session_local()
 
-def test_connection() -> None:
+def test_connection() -> bool:
         
         session = get_session()
         try:
