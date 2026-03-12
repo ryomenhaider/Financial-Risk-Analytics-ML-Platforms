@@ -32,7 +32,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://traditional-kamillah-fip-b560683c.koyeb.app/"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
